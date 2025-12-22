@@ -2,10 +2,12 @@
  * CommandPalette component
  * Cmd/Ctrl+K powered command palette for power users
  * Provides quick access to common actions and navigation
+ * Uses Tailwind utilities
  */
 
 import { useState, useCallback, useEffect, useRef, memo, useMemo } from 'react';
 import { Search } from 'lucide-react';
+import { cn } from '../../lib/utils';
 
 export interface CommandAction {
   id: string;
@@ -130,67 +132,102 @@ export const CommandPalette = memo(function CommandPalette({
   if (!isOpen) return null;
 
   return (
-    <div className="command-palette-overlay" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-[1000] flex items-start justify-center pt-[15vh] bg-black/50 backdrop-blur-[2px] animate-in fade-in duration-150"
+      onClick={onClose}
+    >
       <div
-        className="command-palette"
+        className="w-full max-w-lg bg-[var(--color-surface-elevated)] border border-[var(--color-border)] rounded-[var(--radius-xl)] shadow-[var(--shadow-modal)] overflow-hidden animate-in zoom-in-95 slide-in-from-top-2 duration-200"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"
       >
         {/* Search Input */}
-        <div className="command-palette-input-wrapper">
-          <Search size={18} className="command-palette-search-icon" />
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--color-border)]">
+          <Search size={18} className="text-[var(--color-text-tertiary)] flex-shrink-0" />
           <input
             ref={inputRef}
             type="text"
-            className="command-palette-input"
+            className="flex-1 bg-transparent border-none outline-none text-base text-[var(--color-text)] placeholder:text-[var(--color-placeholder)]"
             placeholder="Type a command or search..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             aria-label="Search commands"
           />
-          <kbd className="command-palette-kbd">ESC</kbd>
+          <kbd className="px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-tertiary)] bg-[var(--color-bg-muted)] border border-[var(--color-border)] rounded">
+            ESC
+          </kbd>
         </div>
 
         {/* Results */}
-        <div className="command-palette-results" ref={listRef}>
+        <div className="max-h-[300px] overflow-y-auto p-2" ref={listRef}>
           {filteredActions.length === 0 ? (
-            <div className="command-palette-empty">
-              <Search size={24} />
-              <p>No commands found</p>
+            <div className="flex flex-col items-center justify-center py-8 text-[var(--color-text-tertiary)]">
+              <Search size={24} className="mb-2 opacity-50" />
+              <p className="text-sm">No commands found</p>
             </div>
           ) : (
             <>
               {!query && recentActions.length > 0 && (
-                <div className="command-palette-section-header">Recent</div>
+                <div className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-tertiary)]">
+                  Recent
+                </div>
               )}
               {filteredActions.map((action, index) => {
-                const isRecent = !query && recentActionIds.includes(action.id);
+                const isSelected = index === boundedSelectedIndex;
                 const showAllHeader = !query && index === recentActions.length && recentActions.length > 0;
 
                 return (
                   <div key={action.id}>
                     {showAllHeader && (
-                      <div className="command-palette-section-header">All Commands</div>
+                      <div className="px-2 py-1.5 mt-2 text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-tertiary)]">
+                        All Commands
+                      </div>
                     )}
                     <button
-                      className="command-palette-item"
-                      data-selected={index === boundedSelectedIndex}
-                      data-recent={isRecent}
+                      className={cn(
+                        'w-full flex items-center gap-3 px-3 py-2.5 rounded-[var(--radius-md)] text-left transition-colors duration-100',
+                        isSelected
+                          ? 'bg-[var(--color-accent)] text-white'
+                          : 'hover:bg-[var(--color-surface-hover)]'
+                      )}
+                      data-selected={isSelected}
                       onClick={() => handleItemClick(action)}
                       onMouseEnter={() => setSelectedIndex(index)}
                     >
-                      <span className="command-palette-item-icon">{action.icon}</span>
-                      <div className="command-palette-item-content">
-                        <span className="command-palette-item-label">{action.label}</span>
+                      <span className={cn(
+                        'flex-shrink-0 [&>svg]:w-[18px] [&>svg]:h-[18px]',
+                        isSelected ? 'text-white/80' : 'text-[var(--color-text-tertiary)]'
+                      )}>
+                        {action.icon}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <span className={cn(
+                          'block text-sm font-medium truncate',
+                          isSelected ? 'text-white' : 'text-[var(--color-text)]'
+                        )}>
+                          {action.label}
+                        </span>
                         {action.description && (
-                          <span className="command-palette-item-desc">{action.description}</span>
+                          <span className={cn(
+                            'block text-xs truncate',
+                            isSelected ? 'text-white/70' : 'text-[var(--color-text-secondary)]'
+                          )}>
+                            {action.description}
+                          </span>
                         )}
                       </div>
                       {action.shortcut && (
-                        <kbd className="command-palette-item-shortcut">{action.shortcut}</kbd>
+                        <kbd className={cn(
+                          'px-1.5 py-0.5 text-[10px] font-medium rounded border',
+                          isSelected
+                            ? 'bg-white/10 border-white/20 text-white/80'
+                            : 'bg-[var(--color-bg-muted)] border-[var(--color-border)] text-[var(--color-text-tertiary)]'
+                        )}>
+                          {action.shortcut}
+                        </kbd>
                       )}
                     </button>
                   </div>
@@ -201,10 +238,19 @@ export const CommandPalette = memo(function CommandPalette({
         </div>
 
         {/* Footer hint */}
-        <div className="command-palette-footer">
-          <span><kbd>↑↓</kbd> navigate</span>
-          <span><kbd>↵</kbd> select</span>
-          <span><kbd>esc</kbd> close</span>
+        <div className="flex items-center justify-center gap-4 px-4 py-2.5 border-t border-[var(--color-border)] bg-[var(--color-bg-muted)]">
+          <span className="text-xs text-[var(--color-text-tertiary)]">
+            <kbd className="px-1 py-0.5 mr-1 text-[10px] bg-[var(--color-surface)] border border-[var(--color-border)] rounded">↑↓</kbd>
+            navigate
+          </span>
+          <span className="text-xs text-[var(--color-text-tertiary)]">
+            <kbd className="px-1 py-0.5 mr-1 text-[10px] bg-[var(--color-surface)] border border-[var(--color-border)] rounded">↵</kbd>
+            select
+          </span>
+          <span className="text-xs text-[var(--color-text-tertiary)]">
+            <kbd className="px-1 py-0.5 mr-1 text-[10px] bg-[var(--color-surface)] border border-[var(--color-border)] rounded">esc</kbd>
+            close
+          </span>
         </div>
       </div>
     </div>

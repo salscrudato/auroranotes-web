@@ -54,13 +54,46 @@ export function ToastProvider({ children }: ToastProviderProps) {
     }
   };
 
+  const getToastStyles = (type: ToastType) => {
+    const base = [
+      'flex items-center gap-2 px-4 py-3',
+      'bg-[var(--color-surface-elevated)] text-[var(--color-text)]',
+      'border rounded-[var(--radius-lg)] shadow-[var(--shadow-card)]',
+      'text-sm font-medium',
+      'animate-in slide-in-from-bottom-2 fade-in duration-200',
+    ].join(' ');
+
+    const variants: Record<ToastType, string> = {
+      success: 'border-[var(--color-success-border)]',
+      error: 'border-[var(--color-danger-border)]',
+      warning: 'border-amber-300/30',
+      info: 'border-[var(--color-border)]',
+    };
+
+    return cn(base, variants[type]);
+  };
+
+  const getIconStyles = (type: ToastType) => {
+    const variants: Record<ToastType, string> = {
+      success: 'text-[var(--color-success)]',
+      error: 'text-[var(--color-danger)]',
+      warning: 'text-[var(--color-warning)]',
+      info: 'text-[var(--color-accent)]',
+    };
+    return variants[type];
+  };
+
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      <div className="toast-container" role="status" aria-live="polite">
+      <div
+        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[2000] flex flex-col gap-2"
+        role="status"
+        aria-live="polite"
+      >
         {toasts.map((toast) => (
-          <div key={toast.id} className={cn('toast', toast.type)}>
-            <span className="toast-icon">
+          <div key={toast.id} className={getToastStyles(toast.type)}>
+            <span className={getIconStyles(toast.type)}>
               {getIcon(toast.type)}
             </span>
             {toast.message}

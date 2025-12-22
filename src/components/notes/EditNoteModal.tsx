@@ -1,13 +1,17 @@
 /**
  * EditNoteModal component
  * Modal for editing an existing note
+ * Uses new Tailwind-based UI components
  */
 
 import { memo, useState, useEffect, useRef, useCallback } from 'react';
-import { X, Save } from 'lucide-react';
+import { Save } from 'lucide-react';
 import type { Note } from '../../lib/types';
 import { NOTES } from '../../lib/constants';
+import { cn } from '../../lib/utils';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
+import { Button } from '../ui/Button';
+import { Dialog, DialogClose, DialogHeader, DialogTitle, DialogBody, DialogFooter } from '../ui/Dialog';
 
 interface EditNoteModalProps {
   note: Note | null;
@@ -49,89 +53,77 @@ export const EditNoteModal = memo(function EditNoteModal({
     onSave(note.id, text.trim());
   }, [note, text, isSaving, onSave]);
 
-  const handleBackdropClick = useCallback((e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  }, [onClose]);
-
   const charCount = text.length;
   const isOverLimit = charCount > NOTES.MAX_LENGTH;
   const hasChanges = note?.text !== text;
   const canSave = hasChanges && text.trim() && !isOverLimit && !isSaving;
 
-  if (!isOpen || !note) return null;
+  if (!note) return null;
 
   return (
-    <div
-      className="modal-backdrop animate-fade-in"
-      onClick={handleBackdropClick}
-      role="dialog"
-      aria-modal="true"
+    <Dialog
+      open={isOpen}
+      onClose={onClose}
       aria-labelledby="edit-note-title"
+      className="max-w-lg"
     >
-      <div
-        ref={modalRef}
-        className="modal edit-note-modal animate-scale-in"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="modal-header">
-          <h2 id="edit-note-title">Edit Note</h2>
-          <button 
-            className="modal-close btn btn-icon btn-ghost"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            <X size={18} />
-          </button>
-        </div>
+      <div ref={modalRef}>
+        <DialogHeader className="relative">
+          <DialogTitle id="edit-note-title">Edit Note</DialogTitle>
+          <DialogClose onClose={onClose} />
+        </DialogHeader>
 
         <form onSubmit={handleSubmit}>
-          <textarea
-            ref={textareaRef}
-            className="edit-note-textarea"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Edit your note..."
-            maxLength={NOTES.MAX_LENGTH + 100} // Allow some overflow for warning
-            disabled={isSaving}
-            aria-label="Edit note content"
-            aria-invalid={isOverLimit}
-            aria-describedby="edit-note-char-count"
-          />
-
-          <div
-            id="edit-note-char-count"
-            className={`chat-char-count ${isOverLimit ? 'over-limit' : ''}`}
-            role={isOverLimit ? 'alert' : undefined}
-          >
-            {isOverLimit
-              ? `Note too long: ${charCount.toLocaleString()} / ${NOTES.MAX_LENGTH.toLocaleString()}`
-              : `${charCount.toLocaleString()} / ${NOTES.MAX_LENGTH.toLocaleString()}`
-            }
-          </div>
-
-          <div className="modal-footer">
-            <button 
-              type="button"
-              className="btn btn-secondary"
-              onClick={onClose}
+          <DialogBody>
+            <textarea
+              ref={textareaRef}
+              className={cn(
+                'w-full min-h-[200px] max-h-[400px] resize-y',
+                'p-4 text-base leading-relaxed',
+                'bg-[var(--color-surface)] text-[var(--color-text)]',
+                'border border-[var(--color-border)] rounded-[var(--radius-lg)]',
+                'placeholder:text-[var(--color-placeholder)]',
+                'focus:outline-none focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/20',
+                'transition-all duration-150',
+                isOverLimit && 'border-[var(--color-danger)] focus:border-[var(--color-danger)]'
+              )}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Edit your note..."
+              maxLength={NOTES.MAX_LENGTH + 100}
               disabled={isSaving}
+              aria-label="Edit note content"
+              aria-invalid={isOverLimit}
+              aria-describedby="edit-note-char-count"
+            />
+
+            <div
+              id="edit-note-char-count"
+              className={cn(
+                'text-xs text-right mt-2',
+                isOverLimit ? 'text-[var(--color-danger)] font-medium' : 'text-[var(--color-text-tertiary)]'
+              )}
+              role={isOverLimit ? 'alert' : undefined}
             >
+              {isOverLimit
+                ? `Note too long: ${charCount.toLocaleString()} / ${NOTES.MAX_LENGTH.toLocaleString()}`
+                : `${charCount.toLocaleString()} / ${NOTES.MAX_LENGTH.toLocaleString()}`
+              }
+            </div>
+          </DialogBody>
+
+          <DialogFooter>
+            <Button type="button" variant="default" onClick={onClose} disabled={isSaving}>
               Cancel
-            </button>
-            <button 
-              type="submit"
-              className="btn btn-primary"
-              disabled={!canSave}
-            >
+            </Button>
+            <Button type="submit" variant="primary" disabled={!canSave}>
               <Save size={16} />
               {isSaving ? 'Saving...' : 'Save Changes'}
-            </button>
-          </div>
+            </Button>
+          </DialogFooter>
         </form>
       </div>
-    </div>
+    </Dialog>
   );
 });
 

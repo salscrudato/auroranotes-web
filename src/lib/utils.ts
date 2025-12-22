@@ -3,6 +3,9 @@
  * Common helpers used across the application
  */
 
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
 /**
  * Escape special regex characters in a string
  * Used for safe string matching in search/highlight features
@@ -67,10 +70,11 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 }
 
 /**
- * Create a class name string from conditionals
+ * Merge class names with Tailwind-aware conflict resolution
+ * Uses clsx for conditional classes and tailwind-merge to handle conflicts
  */
-export function cn(...classes: (string | boolean | undefined | null)[]): string {
-  return classes.filter(Boolean).join(' ');
+export function cn(...inputs: ClassValue[]): string {
+  return twMerge(clsx(inputs));
 }
 
 /**

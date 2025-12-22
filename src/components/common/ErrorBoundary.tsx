@@ -1,10 +1,12 @@
 /**
  * Error Boundary component
  * Catches React component crashes and displays a fallback UI
+ * Uses Tailwind utilities
  */
 
 import { Component, type ReactNode, type ErrorInfo } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { Button } from '../ui/Button';
 
 interface Props {
   children: ReactNode;
@@ -58,39 +60,41 @@ export class ErrorBoundary extends Component<Props, State> {
       }
 
       return (
-        <div className="error-boundary">
-          <div className="error-boundary-content">
-            <div className="error-boundary-icon">
+        <div className="min-h-screen flex items-center justify-center bg-[var(--color-bg)] p-6">
+          <div className="max-w-md w-full text-center">
+            <div className="w-16 h-16 mx-auto rounded-full bg-[var(--color-danger-bg)] flex items-center justify-center mb-6 text-[var(--color-danger)]">
               <AlertTriangle size={32} />
             </div>
-            <h2>Something went wrong</h2>
-            <p>
-              We're sorry, but something unexpected happened. 
+            <h2 className="text-xl font-semibold text-[var(--color-text)] mb-3">
+              Something went wrong
+            </h2>
+            <p className="text-sm text-[var(--color-text-secondary)] mb-6 leading-relaxed">
+              We're sorry, but something unexpected happened.
               Please try refreshing the page.
             </p>
             {import.meta.env.DEV && this.state.error && (
-              <details className="error-boundary-details">
-                <summary>Error details</summary>
-                <pre>{this.state.error.toString()}</pre>
+              <details className="text-left mb-6 p-4 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)]">
+                <summary className="cursor-pointer text-sm font-medium text-[var(--color-text-secondary)] mb-2">
+                  Error details
+                </summary>
+                <pre className="text-xs text-[var(--color-danger)] overflow-auto whitespace-pre-wrap">
+                  {this.state.error.toString()}
+                </pre>
                 {this.state.errorInfo && (
-                  <pre>{this.state.errorInfo.componentStack}</pre>
+                  <pre className="text-xs text-[var(--color-text-tertiary)] overflow-auto whitespace-pre-wrap mt-2">
+                    {this.state.errorInfo.componentStack}
+                  </pre>
                 )}
               </details>
             )}
-            <div className="error-boundary-actions">
-              <button 
-                className="btn btn-primary" 
-                onClick={this.handleReload}
-              >
+            <div className="flex items-center justify-center gap-3">
+              <Button variant="primary" onClick={this.handleReload}>
                 <RefreshCw size={16} />
                 Reload Page
-              </button>
-              <button 
-                className="btn" 
-                onClick={this.handleReset}
-              >
+              </Button>
+              <Button variant="default" onClick={this.handleReset}>
                 Try Again
-              </button>
+              </Button>
             </div>
           </div>
         </div>
