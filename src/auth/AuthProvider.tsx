@@ -18,7 +18,6 @@ import {
   verifyPhoneCode as firebaseVerifyPhoneCode,
   signOut as firebaseSignOut,
   getIdToken,
-  initRecaptcha,
   type User,
 } from '../lib/firebase';
 import {
@@ -102,9 +101,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const startPhoneSignIn = useCallback(async (phoneE164: string): Promise<void> => {
     setError(null);
     try {
-      // Initialize reCAPTCHA if not already done
-      initRecaptcha('recaptcha-container');
-      await firebaseStartPhoneSignIn(phoneE164);
+      // Pass the button ID for invisible reCAPTCHA
+      await firebaseStartPhoneSignIn(phoneE164, 'phone-sign-in-button');
       setPhoneVerificationPending(true);
     } catch (err: unknown) {
       const authErr = err as { code?: string; message?: string };

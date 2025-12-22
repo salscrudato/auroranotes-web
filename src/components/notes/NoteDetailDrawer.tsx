@@ -3,13 +3,13 @@
  * Modal/drawer for viewing full note content when navigating from citations
  */
 
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback } from 'react';
 import { FileText, X, Copy } from 'lucide-react';
 import type { Note } from '../../lib/types';
 import { formatFullTimestamp, formatRelativeTime, shortId } from '../../lib/format';
 import { escapeRegex, copyToClipboard } from '../../lib/utils';
 import { useToast } from '../common/useToast';
-import { useFocusTrap } from '../../lib/hooks/useFocusTrap';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 interface NoteDetailDrawerProps {
   note: Note | null;
@@ -19,39 +19,18 @@ interface NoteDetailDrawerProps {
 
 export function NoteDetailDrawer({ note, onClose, highlightText }: NoteDetailDrawerProps) {
   const { showToast } = useToast();
-  const drawerRef = useFocusTrap<HTMLDivElement>(!!note);
-  const previousActiveElement = useRef<HTMLElement | null>(null);
+  // useFocusTrap handles focus trapping, escape key, and restoration automatically
+  const drawerRef = useFocusTrap<HTMLDivElement>({
+    enabled: !!note,
+    onEscape: onClose,
+    restoreFocus: true,
+  });
 
   const handleCopy = useCallback(async () => {
     if (!note) return;
     const success = await copyToClipboard(note.text);
     showToast(success ? 'Copied to clipboard' : 'Failed to copy', success ? 'success' : 'error');
   }, [note, showToast]);
-
-  // Store the element that had focus before opening, and restore on close
-  useEffect(() => {
-    if (note) {
-      // Store current focused element
-      previousActiveElement.current = document.activeElement as HTMLElement;
-    } else if (previousActiveElement.current) {
-      // Restore focus when closing
-      previousActiveElement.current.focus();
-      previousActiveElement.current = null;
-    }
-  }, [note]);
-
-  // Close on Escape key
-  useEffect(() => {
-    if (!note) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [note, onClose]);
 
   // Prevent body scroll when drawer is open
   useEffect(() => {

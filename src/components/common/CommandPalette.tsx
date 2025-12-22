@@ -21,12 +21,16 @@ interface CommandPaletteProps {
   isOpen: boolean;
   onClose: () => void;
   actions: CommandAction[];
+  recentActionIds?: string[];
+  onActionExecuted?: (actionId: string) => void;
 }
 
 export const CommandPalette = memo(function CommandPalette({
   isOpen,
   onClose,
   actions,
+  recentActionIds = [],
+  onActionExecuted,
 }: CommandPaletteProps) {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -34,18 +38,32 @@ export const CommandPalette = memo(function CommandPalette({
   const listRef = useRef<HTMLDivElement>(null);
   const prevIsOpen = useRef(isOpen);
 
+  // Get recent actions
+  const recentActions = useMemo(() => {
+    return recentActionIds
+      .map((id) => actions.find((a) => a.id === id))
+      .filter((a): a is CommandAction => a !== undefined);
+  }, [recentActionIds, actions]);
+
   // Filter actions based on query
   const filteredActions = useMemo(() => {
-    if (!query.trim()) return actions;
+    if (!query.trim()) {
+      // Show recent actions first, then all actions
+      const nonRecentActions = actions.filter(
+        (a) => !recentActionIds.includes(a.id)
+      );
+      return [...recentActions, ...nonRecentActions];
+    }
     const searchText = query.toLowerCase();
     return actions.filter((action) =>
       action.label.toLowerCase().includes(searchText) ||
       action.description?.toLowerCase().includes(searchText) ||
       action.keywords?.some((k) => k.toLowerCase().includes(searchText))
     );
-  }, [actions, query]);
+  }, [actions, query, recentActions, recentActionIds]);
 
-  // Compute bounded selected index
+  // Compute bounded selected index - automatically clamps to valid range
+  // No need to reset via effect; just ensure index stays within bounds
   const boundedSelectedIndex = useMemo(() => {
     if (filteredActions.length === 0) return 0;
     return Math.min(selectedIndex, filteredActions.length - 1);
@@ -103,9 +121,10 @@ export const CommandPalette = memo(function CommandPalette({
   const handleItemClick = useCallback(
     (action: CommandAction) => {
       action.action();
+      onActionExecuted?.(action.id);
       onClose();
     },
-    [onClose]
+    [onClose, onActionExecuted]
   );
 
   if (!isOpen) return null;
@@ -143,26 +162,41 @@ export const CommandPalette = memo(function CommandPalette({
               <p>No commands found</p>
             </div>
           ) : (
-            filteredActions.map((action, index) => (
-              <button
-                key={action.id}
-                className="command-palette-item"
-                data-selected={index === boundedSelectedIndex}
-                onClick={() => handleItemClick(action)}
-                onMouseEnter={() => setSelectedIndex(index)}
-              >
-                <span className="command-palette-item-icon">{action.icon}</span>
-                <div className="command-palette-item-content">
-                  <span className="command-palette-item-label">{action.label}</span>
-                  {action.description && (
-                    <span className="command-palette-item-desc">{action.description}</span>
-                  )}
-                </div>
-                {action.shortcut && (
-                  <kbd className="command-palette-item-shortcut">{action.shortcut}</kbd>
-                )}
-              </button>
-            ))
+            <>
+              {!query && recentActions.length > 0 && (
+                <div className="command-palette-section-header">Recent</div>
+              )}
+              {filteredActions.map((action, index) => {
+                const isRecent = !query && recentActionIds.includes(action.id);
+                const showAllHeader = !query && index === recentActions.length && recentActions.length > 0;
+
+                return (
+                  <div key={action.id}>
+                    {showAllHeader && (
+                      <div className="command-palette-section-header">All Commands</div>
+                    )}
+                    <button
+                      className="command-palette-item"
+                      data-selected={index === boundedSelectedIndex}
+                      data-recent={isRecent}
+                      onClick={() => handleItemClick(action)}
+                      onMouseEnter={() => setSelectedIndex(index)}
+                    >
+                      <span className="command-palette-item-icon">{action.icon}</span>
+                      <div className="command-palette-item-content">
+                        <span className="command-palette-item-label">{action.label}</span>
+                        {action.description && (
+                          <span className="command-palette-item-desc">{action.description}</span>
+                        )}
+                      </div>
+                      {action.shortcut && (
+                        <kbd className="command-palette-item-shortcut">{action.shortcut}</kbd>
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
+            </>
           )}
         </div>
 

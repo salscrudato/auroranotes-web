@@ -1,45 +1,39 @@
 /**
- * LandingPage - Beautiful authentication landing page
- * Shows when users are not authenticated
+ * LandingPage - Simple, compelling authentication landing page
+ * Clean design with Google and phone number sign-in options
  */
 
 import { useState, useCallback, memo } from 'react';
-import {
-  Sparkles, Brain, MessageSquare, Search,
-  Loader2, ArrowRight, Lock, Lightbulb
-} from 'lucide-react';
+import { Loader2, ArrowRight, Phone, ChevronLeft, PenLine, MessageCircle, Sparkles } from 'lucide-react';
 import { useAuth } from '../../auth/useAuth';
 import { GoogleIcon } from './GoogleIcon';
-import { HowItWorks } from '../landing/HowItWorks';
+import { formatPhoneNumber, toE164 } from '../../lib/utils';
 
-// Feature cards data
-const features = [
+// How it works steps
+const steps = [
   {
-    icon: Lightbulb,
-    title: 'Total Recall',
-    description: 'Capture thoughts, ideas, and information. AuroraNotes remembers everything so you don\'t have to.',
+    icon: PenLine,
+    title: 'Capture',
+    description: 'Jot down thoughts, ideas, and notes as they come to you.',
   },
   {
-    icon: MessageSquare,
-    title: 'Just Ask',
-    description: 'Ask questions in plain English. Get clear answers pulled directly from your notes, with sources you can verify.',
+    icon: MessageCircle,
+    title: 'Ask',
+    description: 'Ask questions about your notes in plain English.',
   },
   {
-    icon: Search,
-    title: 'Search by Meaning',
-    description: 'Forget keywords. Search by what you mean, not what you typed. Find notes you didn\'t even know you had.',
-  },
-  {
-    icon: Lock,
-    title: 'Your Data, Protected',
-    description: 'Your notes are encrypted and private. We never train on your data or share it with anyone.',
+    icon: Sparkles,
+    title: 'Discover',
+    description: 'Get AI-powered answers with sources from your notes.',
   },
 ];
 
 export const LandingPage = memo(function LandingPage() {
-  const { signInWithGoogle, error, clearError } = useAuth();
+  const { signInWithGoogle, startPhoneSignIn, verifyPhoneCode, phoneVerificationPending, error, clearError } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [showHowItWorks, setShowHowItWorks] = useState(false);
+  const [showPhoneInput, setShowPhoneInput] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
 
   const handleGoogleSignIn = useCallback(async () => {
     setLoading(true);
@@ -53,116 +47,205 @@ export const LandingPage = memo(function LandingPage() {
     }
   }, [signInWithGoogle, clearError]);
 
+  const handlePhoneChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const { formatted } = formatPhoneNumber(e.target.value);
+    setPhoneNumber(formatted);
+  }, []);
+
+  const handlePhoneSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!phoneNumber.trim()) return;
+
+    setLoading(true);
+    clearError();
+    try {
+      const e164Phone = toE164(phoneNumber);
+      await startPhoneSignIn(e164Phone);
+    } catch {
+      // Error handled by AuthProvider
+    } finally {
+      setLoading(false);
+    }
+  }, [phoneNumber, startPhoneSignIn, clearError]);
+
+  const handleVerifyCode = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!verificationCode.trim()) return;
+
+    setLoading(true);
+    clearError();
+    try {
+      await verifyPhoneCode(verificationCode);
+    } catch {
+      // Error handled by AuthProvider
+    } finally {
+      setLoading(false);
+    }
+  }, [verificationCode, verifyPhoneCode, clearError]);
+
+  const handleBackToOptions = useCallback(() => {
+    setShowPhoneInput(false);
+    setPhoneNumber('');
+    setVerificationCode('');
+    clearError();
+  }, [clearError]);
+
   return (
     <div className="landing-page">
-      {/* Gradient background orbs */}
-      <div className="landing-bg-orb landing-bg-orb-1" aria-hidden="true" />
-      <div className="landing-bg-orb landing-bg-orb-2" aria-hidden="true" />
+      {/* Aurora Ambient Background */}
+      <div className="landing-ambient" aria-hidden="true">
+        <div className="landing-gradient-1" />
+        <div className="landing-gradient-2" />
+        <div className="landing-gradient-3" />
+        <div className="landing-grid-overlay" />
+      </div>
 
       <div className="landing-content">
-        {/* Hero Section */}
-        <header className="landing-hero">
-          <div className="landing-logo">
-            <Sparkles size={32} />
+        {/* Hero Section - Centered */}
+        <header className="landing-hero-simple">
+          {/* Logo */}
+          <div className="landing-logo-simple">
+            <img src="/favicon.svg" alt="AuroraNotes" className="landing-favicon" />
           </div>
-          <h1 className="landing-title">
-            Your notes,
-            <span className="landing-title-accent"> brilliantly searchable</span>
-          </h1>
-          <p className="landing-subtitle">
-            AuroraNotes uses AI to let you ask questions about your notes
-            and get answers with cited sources. Like having a perfect memory.
+
+          <h1 className="landing-title-simple">Your notes, brilliantly searchable</h1>
+
+          <p className="landing-subtitle-simple">
+            Jot down notes naturally, then ask questions in plain English. Our AI instantly finds and synthesizes answers from everything you've written.
           </p>
 
-          {/* CTA Section */}
-          <div className="landing-cta">
-            <button
-              className="landing-google-btn"
-              onClick={handleGoogleSignIn}
-              disabled={loading}
-              type="button"
-            >
-              <span className="landing-google-icon">
-                {loading ? <Loader2 size={22} className="spinner" /> : <GoogleIcon size={22} />}
-              </span>
-              <span className="landing-google-text">
-                {loading ? 'Signing in...' : 'Continue with Google'}
-              </span>
-              <ArrowRight size={18} className="landing-google-arrow" />
-            </button>
+          {/* Auth Options */}
+          <div className="landing-auth">
+            {!showPhoneInput && !phoneVerificationPending ? (
+              <>
+                {/* Google Sign In */}
+                <button
+                  className="landing-auth-btn landing-auth-google"
+                  onClick={handleGoogleSignIn}
+                  disabled={loading}
+                  type="button"
+                >
+                  {loading ? (
+                    <Loader2 size={20} className="spinner" />
+                  ) : (
+                    <GoogleIcon size={20} />
+                  )}
+                  <span>Continue with Google</span>
+                </button>
 
-            {error && (
-              <p className="landing-error">{error.message}</p>
+                <div className="landing-auth-divider">
+                  <span>or</span>
+                </div>
+
+                {/* Phone Sign In Option */}
+                <button
+                  className="landing-auth-btn landing-auth-phone"
+                  onClick={() => setShowPhoneInput(true)}
+                  type="button"
+                >
+                  <Phone size={20} />
+                  <span>Continue with Phone</span>
+                </button>
+              </>
+            ) : phoneVerificationPending ? (
+              /* Verification Code Input */
+              <form onSubmit={handleVerifyCode} className="landing-phone-form">
+                <button
+                  type="button"
+                  className="landing-back-btn"
+                  onClick={handleBackToOptions}
+                >
+                  <ChevronLeft size={20} />
+                  Back
+                </button>
+                <p className="landing-phone-hint">Enter the code sent to your phone</p>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  className="landing-phone-input"
+                  placeholder="123456"
+                  value={verificationCode}
+                  onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  maxLength={6}
+                  autoFocus
+                />
+                <button
+                  type="submit"
+                  className="landing-auth-btn landing-auth-primary"
+                  disabled={loading || verificationCode.length < 6}
+                >
+                  {loading ? <Loader2 size={20} className="spinner" /> : <ArrowRight size={20} />}
+                  <span>Verify Code</span>
+                </button>
+              </form>
+            ) : (
+              /* Phone Number Input */
+              <form onSubmit={handlePhoneSubmit} className="landing-phone-form">
+                <button
+                  type="button"
+                  className="landing-back-btn"
+                  onClick={handleBackToOptions}
+                >
+                  <ChevronLeft size={20} />
+                  Back
+                </button>
+                <p className="landing-phone-hint">Enter your phone number</p>
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  className="landing-phone-input"
+                  placeholder="(555) 123-4567"
+                  value={phoneNumber}
+                  onChange={handlePhoneChange}
+                  autoFocus
+                />
+                <button
+                  id="phone-sign-in-button"
+                  type="submit"
+                  className="landing-auth-btn landing-auth-primary"
+                  disabled={loading || phoneNumber.replace(/\D/g, '').length < 10}
+                >
+                  {loading ? <Loader2 size={20} className="spinner" /> : <ArrowRight size={20} />}
+                  <span>Send Code</span>
+                </button>
+              </form>
             )}
 
-            <p className="landing-cta-hint">
-              Free to use • No credit card required
-            </p>
+            {error && (
+              <p className="landing-error" role="alert">{error.message}</p>
+            )}
           </div>
-        </header>
 
-        {/* Features Grid */}
-        <section className="landing-features">
-          <h2 className="landing-section-title">
-            <Brain size={20} />
-            Why AuroraNotes
-          </h2>
-          <div className="landing-features-grid">
-            {features.map((feature, i) => (
-              <div key={i} className="landing-feature-card">
-                <div className="landing-feature-icon">
-                  <feature.icon size={22} />
+          {/* How It Works */}
+          <section className="landing-steps" aria-label="How it works">
+            {steps.map((step, i) => (
+              <div key={i} className="landing-step">
+                <div className="landing-step-icon" aria-hidden="true">
+                  <step.icon size={24} />
                 </div>
-                <h3>{feature.title}</h3>
-                <p>{feature.description}</p>
+                <h3 className="landing-step-title">{step.title}</h3>
+                <p className="landing-step-desc">{step.description}</p>
               </div>
             ))}
-          </div>
-        </section>
+          </section>
+        </header>
 
-        {/* Demo/Preview Section */}
-        <section className="landing-demo">
-          <div className="landing-demo-window">
-            <div className="landing-demo-header">
-              <div className="landing-demo-dots">
-                <span /><span /><span />
-              </div>
-              <span className="landing-demo-title">AuroraNotes AI</span>
-            </div>
-            <div className="landing-demo-content">
-              <div className="landing-demo-message landing-demo-user">
-                <MessageSquare size={16} />
-                <span>What did we decide about the database migration?</span>
-              </div>
-              <div className="landing-demo-message landing-demo-ai">
-                <Sparkles size={16} />
-                <div>
-                  <p>Based on your notes, the team decided to migrate from Firestore to PostgreSQL for analytics data in Q2 2025 <span className="landing-demo-cite">[1]</span>. Firestore will remain the primary database for notes storage.</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Footer */}
-        <footer className="landing-page-footer">
-          <p>Built with Gemini 2.0 Flash • Vertex AI Embeddings • Cloud Run</p>
-          <button
-            className="landing-how-it-works-link"
-            onClick={() => setShowHowItWorks(true)}
-            type="button"
-          >
-            How It Works
-          </button>
+        {/* Footer with Terms/Privacy */}
+        <footer className="landing-legal-footer">
+          <p className="landing-legal-text">
+            By continuing, you agree to our{' '}
+            <a href="/terms" className="landing-legal-link">Terms of Service</a>
+            {' '}and{' '}
+            <a href="/privacy" className="landing-legal-link">Privacy Policy</a>
+          </p>
+          <p className="landing-copyright">
+            © {new Date().getFullYear()} AuroraNotes. All rights reserved.
+          </p>
         </footer>
       </div>
 
-      {/* How It Works Modal */}
-      {showHowItWorks && (
-        <div className="how-it-works-modal-overlay">
-          <HowItWorks onClose={() => setShowHowItWorks(false)} />
-        </div>
-      )}
     </div>
   );
 });

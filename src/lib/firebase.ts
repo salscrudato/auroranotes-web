@@ -1,11 +1,13 @@
 /**
  * Firebase Configuration and Initialization
  * Loads config from VITE_FIREBASE_* environment variables
+ * Supports Auth Emulator for local development
  */
 
 import { initializeApp, type FirebaseApp } from 'firebase/app';
 import {
   getAuth,
+  connectAuthEmulator,
   GoogleAuthProvider,
   signInWithPopup,
   signInWithPhoneNumber,
@@ -14,6 +16,10 @@ import {
   type ConfirmationResult,
   type User,
 } from 'firebase/auth';
+
+// Check if we should use the Firebase Auth Emulator
+const USE_AUTH_EMULATOR = import.meta.env.VITE_USE_FIREBASE_EMULATOR === 'true';
+const AUTH_EMULATOR_URL = import.meta.env.VITE_FIREBASE_AUTH_EMULATOR_URL || 'http://127.0.0.1:9099';
 
 // Firebase configuration from environment variables
 const firebaseConfig = {
@@ -49,9 +55,24 @@ export function getFirebaseApp(): FirebaseApp {
   return app;
 }
 
+// Track if emulator has been connected
+let emulatorConnected = false;
+
 export function getFirebaseAuth(): Auth {
   if (!auth) {
     auth = getAuth(getFirebaseApp());
+
+    // Connect to Auth Emulator in development
+    if (USE_AUTH_EMULATOR && !emulatorConnected) {
+      try {
+        connectAuthEmulator(auth, AUTH_EMULATOR_URL, { disableWarnings: true });
+        emulatorConnected = true;
+        // eslint-disable-next-line no-console
+        console.log('🔧 Connected to Firebase Auth Emulator at', AUTH_EMULATOR_URL);
+      } catch (e) {
+        console.warn('Failed to connect to Auth Emulator:', e);
+      }
+    }
   }
   return auth;
 }
@@ -78,43 +99,102 @@ let phoneConfirmationResult: ConfirmationResult | null = null;
 let recaptchaVerifier: RecaptchaVerifier | null = null;
 
 /**
- * Initialize invisible reCAPTCHA for phone auth
- * Call this once before starting phone sign-in
+ * Initialize invisible reCAPTCHA attached to a button
+ * The reCAPTCHA will be solved automatically when the button is clicked
+ * @param buttonId The ID of the submit button to attach reCAPTCHA to
  */
-export function initRecaptcha(containerId: string): RecaptchaVerifier {
+export function initRecaptcha(buttonId: string): RecaptchaVerifier {
   const auth = getFirebaseAuth();
-  
+
   // Clear existing verifier
   if (recaptchaVerifier) {
-    recaptchaVerifier.clear();
+    try {
+      recaptchaVerifier.clear();
+    } catch {
+      // Ignore errors when clearing
+    }
+    recaptchaVerifier = null;
   }
-  
-  recaptchaVerifier = new RecaptchaVerifier(auth, containerId, {
+
+  recaptchaVerifier = new RecaptchaVerifier(auth, buttonId, {
     size: 'invisible',
     callback: () => {
-      // reCAPTCHA solved - allow sign in
+      // reCAPTCHA solved - form will be submitted
     },
     'expired-callback': () => {
       // reCAPTCHA expired - reset
-      console.warn('reCAPTCHA expired');
+      console.warn('reCAPTCHA expired, please try again');
+      if (recaptchaVerifier) {
+        recaptchaVerifier.render();
+      }
     },
   });
-  
+
   return recaptchaVerifier;
+}
+
+/**
+ * Clear the reCAPTCHA verifier (call when unmounting)
+ */
+export function clearRecaptcha(): void {
+  if (recaptchaVerifier) {
+    try {
+      recaptchaVerifier.clear();
+    } catch {
+      // Ignore errors when clearing
+    }
+    recaptchaVerifier = null;
+  }
 }
 
 /**
  * Start phone sign-in flow
  * @param phoneNumber Phone number in E.164 format (e.g., +14155551234)
+ * @param buttonId The ID of the button to attach reCAPTCHA to
  */
-export async function startPhoneSignIn(phoneNumber: string): Promise<void> {
+export async function startPhoneSignIn(phoneNumber: string, buttonId: string): Promise<void> {
   const auth = getFirebaseAuth();
-  
-  if (!recaptchaVerifier) {
-    throw new Error('reCAPTCHA not initialized. Call initRecaptcha() first.');
+
+  // Initialize reCAPTCHA on the button if not already done (skip for emulator)
+  if (!recaptchaVerifier && !USE_AUTH_EMULATOR) {
+    initRecaptcha(buttonId);
   }
-  
-  phoneConfirmationResult = await signInWithPhoneNumber(auth, phoneNumber, recaptchaVerifier);
+
+  try {
+    // For emulator, we need a mock verifier
+    if (USE_AUTH_EMULATOR) {
+      // Create a simple mock ApplicationVerifier for the emulator
+      const mockVerifier = {
+        type: 'recaptcha' as const,
+        verify: () => Promise.resolve('mock-recaptcha-token'),
+      };
+      phoneConfirmationResult = await signInWithPhoneNumber(auth, phoneNumber, mockVerifier);
+    } else {
+      phoneConfirmationResult = await signInWithPhoneNumber(auth, phoneNumber, recaptchaVerifier!);
+    }
+  } catch (error: unknown) {
+    const firebaseError = error as { code?: string; message?: string };
+
+    // Provide user-friendly error messages
+    if (firebaseError.code === 'auth/invalid-phone-number') {
+      throw new Error('Invalid phone number format. Please enter a valid US phone number.');
+    } else if (firebaseError.code === 'auth/too-many-requests') {
+      throw new Error('Too many attempts. Please wait a few minutes and try again.');
+    } else if (firebaseError.code === 'auth/captcha-check-failed') {
+      throw new Error('reCAPTCHA verification failed. Please try again.');
+    } else if (firebaseError.code === 'auth/quota-exceeded') {
+      throw new Error('SMS quota exceeded. Please try again later or use Google sign-in.');
+    } else if (firebaseError.message?.includes('400')) {
+      // This is the error we're seeing - provide helpful guidance
+      throw new Error(
+        'Phone authentication is not configured. Please ensure:\n' +
+        '1. Phone auth is enabled in Firebase Console → Authentication → Sign-in method\n' +
+        '2. localhost is in authorized domains\n' +
+        'Or use Google sign-in instead.'
+      );
+    }
+    throw error;
+  }
 }
 
 /**

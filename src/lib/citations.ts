@@ -1,29 +1,22 @@
 /**
  * Citation/Source parsing and handling utilities
  * Parses [1], [2] citation tokens from RAG responses and maps to source objects
- * Also supports legacy [N1], [N2] format for backward compatibility
  */
 
-import type { Source, Citation, ConfidenceLevel } from './types';
+import type { Source, ConfidenceLevel } from './types';
 
-/** Regex pattern to match new citation tokens like [1], [2], etc. */
+/** Regex pattern to match citation tokens like [1], [2], etc. */
 const SOURCE_PATTERN = /\[(\d+)\]/g;
-
-/** Regex pattern to match legacy citation tokens like [N1], [N2], etc. */
-const LEGACY_CITATION_PATTERN = /\[N(\d+)\]/g;
 
 /** Represents a segment of parsed text - either plain text or a source reference */
 export interface TextSegment {
   type: 'text' | 'source';
   content: string;
   source?: Source;
-  /** @deprecated Use source instead */
-  citation?: Citation;
 }
 
 /**
  * Parse answer text and identify source tokens [1], [2], etc.
- * Also supports legacy [N1], [N2] format for backward compatibility
  * Returns an array of segments for rendering
  */
 export function parseSources(
@@ -149,115 +142,3 @@ export function getConfidenceFromRelevance(relevance: number): ConfidenceLevel {
   if (relevance > 0) return 'low';
   return 'none';
 }
-
-// ============================================
-// Legacy Support Functions (deprecated)
-// ============================================
-
-/**
- * @deprecated Use parseSources instead
- * Parse answer text and identify citation tokens
- */
-export function parseCitations(
-  text: string,
-  citations: Citation[] | undefined
-): TextSegment[] {
-  if (!text) return [];
-  if (!citations || citations.length === 0) {
-    return [{ type: 'text', content: text }];
-  }
-
-  const citationMap = new Map<string, Citation>();
-  for (const c of citations) {
-    citationMap.set(c.cid, c);
-  }
-
-  const segments: TextSegment[] = [];
-  let lastIndex = 0;
-  const matches = text.matchAll(LEGACY_CITATION_PATTERN);
-
-  for (const match of matches) {
-    const fullMatch = match[0];
-    const num = match[1];
-    const cid = `N${num}`;
-    const matchIndex = match.index!;
-
-    if (matchIndex > lastIndex) {
-      segments.push({ type: 'text', content: text.slice(lastIndex, matchIndex) });
-    }
-
-    const citation = citationMap.get(cid);
-    if (citation) {
-      segments.push({ type: 'source', content: fullMatch, citation });
-    } else {
-      segments.push({ type: 'text', content: fullMatch });
-    }
-
-    lastIndex = matchIndex + fullMatch.length;
-  }
-
-  if (lastIndex < text.length) {
-    segments.push({ type: 'text', content: text.slice(lastIndex) });
-  }
-
-  return segments;
-}
-
-/**
- * @deprecated Use getReferencedSources instead
- */
-export function getReferencedCitations(
-  text: string,
-  citations: Citation[] | undefined
-): Citation[] {
-  if (!text || !citations || citations.length === 0) return [];
-
-  const citationMap = new Map<string, Citation>();
-  for (const c of citations) {
-    citationMap.set(c.cid, c);
-  }
-
-  const referenced: Citation[] = [];
-  const seen = new Set<string>();
-
-  const matches = text.matchAll(LEGACY_CITATION_PATTERN);
-  for (const match of matches) {
-    const cid = `N${match[1]}`;
-    if (!seen.has(cid)) {
-      seen.add(cid);
-      const citation = citationMap.get(cid);
-      if (citation) {
-        referenced.push(citation);
-      }
-    }
-  }
-
-  return referenced;
-}
-
-/**
- * @deprecated Use hasSources instead
- */
-export function hasCitations(text: string): boolean {
-  LEGACY_CITATION_PATTERN.lastIndex = 0;
-  return LEGACY_CITATION_PATTERN.test(text);
-}
-
-/**
- * @deprecated Use formatPreview instead
- */
-export function formatSnippet(snippet: string, maxLength = 200): string {
-  if (!snippet) return '';
-  if (snippet.length <= maxLength) return snippet;
-  return snippet.slice(0, maxLength).trim() + '…';
-}
-
-/**
- * @deprecated Use getConfidenceFromRelevance instead
- */
-export function getConfidenceLevel(score: number): 'high' | 'medium' | 'low' {
-  if (score >= 0.7) return 'high';
-  if (score >= 0.4) return 'medium';
-  return 'low';
-}
-

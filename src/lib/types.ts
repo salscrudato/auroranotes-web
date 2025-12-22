@@ -9,20 +9,31 @@ export type FirestoreTs = { _seconds: number; _nanoseconds?: number };
 /** Raw timestamp value that can come from API */
 export type RawTimestamp = string | FirestoreTs | undefined | null;
 
+/** Processing status for notes */
+export type ProcessingStatus = 'pending' | 'processing' | 'ready' | 'failed';
+
 /** Note as returned from API (with raw timestamps) */
 export interface RawNote {
   id: string;
+  title?: string;                        // Optional title
   text: string;
   tenantId: string;
-  createdAt: string;  // ISO 8601 timestamp
-  updatedAt: string;  // ISO 8601 timestamp
+  processingStatus?: ProcessingStatus;   // Chunk processing status
+  tags?: string[];                       // Optional tags
+  metadata?: Record<string, unknown>;    // Optional metadata
+  createdAt: string;                     // ISO 8601 timestamp
+  updatedAt: string;                     // ISO 8601 timestamp
 }
 
 /** Normalized note with JS Date objects */
 export interface Note {
   id: string;
+  title?: string;
   text: string;
   tenantId: string;
+  processingStatus?: ProcessingStatus;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
   createdAt: Date | null;
   updatedAt: Date | null;
 }
@@ -67,8 +78,8 @@ export interface Source {
   relevance: number; // 0-1 confidence score
 }
 
-/** Query intent classification */
-export type QueryIntent = 'summarize' | 'list' | 'decision' | 'action_item' | 'search' | 'question' | 'creative';
+/** Query intent classification - matches backend QueryIntent */
+export type QueryIntent = 'summarize' | 'list' | 'decision' | 'action_item' | 'search' | 'question';
 
 /** Confidence level for chat responses */
 export type ConfidenceLevel = 'high' | 'medium' | 'low' | 'none';
@@ -86,6 +97,23 @@ export interface EnhancedConfidence {
   };
 }
 
+/** Action result data from agentic actions */
+export interface ActionData {
+  createdNote?: { id: string; title?: string; text: string };
+  reminder?: { id: string; text: string; dueAt: string };
+  searchResults?: Array<{ noteId: string; preview: string; date: string }>;
+  summary?: string;
+  actionItems?: Array<{ text: string; source: string; status?: string }>;
+  mentions?: Array<{ noteId: string; context: string; date: string }>;
+}
+
+/** Action metadata in chat response */
+export interface ActionMeta {
+  type: 'create_note' | 'set_reminder' | 'search_notes' | 'summarize_period' | 'list_action_items' | 'find_mentions';
+  success: boolean;
+  data?: ActionData;
+}
+
 /** Chat response metadata */
 export interface ChatMeta {
   model: string;
@@ -94,6 +122,7 @@ export interface ChatMeta {
   intent: QueryIntent;
   confidence: ConfidenceLevel;
   sourceCount: number;
+  action?: ActionMeta;  // Present when an agentic action was executed
   debug?: {
     strategy: string;
     candidateCount?: number;
@@ -143,6 +172,7 @@ export interface ChatMessage {
   sources?: Source[];
   contextSources?: Source[]; // All relevant sources used as context (may not be cited)
   meta?: ChatMeta;
+  action?: ActionMeta;  // Present when this message was an agentic action response
   isError?: boolean;
   errorCode?: number;
   isStreaming?: boolean;
@@ -203,9 +233,9 @@ export interface HealthResponse {
   version?: string;
 }
 
-/** API error response */
+/** API error response - matches backend format */
 export interface ApiError {
-  error: string;
+  error: string | { code: string; message: string; details?: Record<string, unknown> };
   code?: string;
   retryAfter?: number;       // Seconds until retry allowed (for 429 responses)
   retryAfterMs?: number;     // Milliseconds until retry (alternative format)
@@ -216,5 +246,17 @@ export interface ApiResponse<T> {
   data: T;
   requestId: string | null;
   rateLimit: RateLimitInfo | null;
+}
+
+// ============================================
+// Transcription Types
+// ============================================
+
+/** Transcription response from API */
+export interface TranscriptionResponse {
+  text: string;
+  processingTimeMs: number;
+  model: string;
+  estimatedDurationSeconds?: number;
 }
 

@@ -5,8 +5,8 @@
  */
 
 import { useState, useRef, useEffect, memo, useCallback } from 'react';
-import type { Source, Citation } from '../../lib/types';
-import { formatPreview, formatSnippet } from '../../lib/citations';
+import type { Source } from '../../lib/types';
+import { formatPreview } from '../../lib/citations';
 import { cn } from '../../lib/utils';
 
 // ============================================
@@ -131,107 +131,3 @@ export const SourceBadge = memo(function SourceBadge({
     </button>
   );
 });
-
-// ============================================
-// Legacy Citation Components (deprecated)
-// ============================================
-
-interface CitationChipProps {
-  citation: Citation;
-  onClick: (citation: Citation) => void;
-}
-
-/**
- * @deprecated Use SourceRefChip instead
- */
-export const CitationChip = memo(function CitationChip({ citation, onClick }: CitationChipProps) {
-  const [showTooltip, setShowTooltip] = useState(false);
-  const chipRef = useRef<HTMLButtonElement>(null);
-  const tooltipRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (showTooltip && tooltipRef.current && chipRef.current) {
-      const tooltip = tooltipRef.current;
-      const viewportWidth = window.innerWidth;
-
-      tooltip.style.left = '50%';
-      tooltip.style.transform = 'translateX(-50%)';
-
-      const tooltipRect = tooltip.getBoundingClientRect();
-      if (tooltipRect.right > viewportWidth - 8) {
-        tooltip.style.left = 'auto';
-        tooltip.style.right = '0';
-        tooltip.style.transform = 'none';
-      }
-      if (tooltipRect.left < 8) {
-        tooltip.style.left = '0';
-        tooltip.style.right = 'auto';
-        tooltip.style.transform = 'none';
-      }
-    }
-  }, [showTooltip]);
-
-  const handleClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    onClick(citation);
-  };
-
-  const snippetPreview = formatSnippet(citation.snippet, 100);
-
-  const handleMouseEnter = useCallback(() => setShowTooltip(true), []);
-  const handleMouseLeave = useCallback(() => setShowTooltip(false), []);
-
-  return (
-    <span className="citation-chip-wrapper">
-      <button
-        ref={chipRef}
-        className="citation-chip"
-        onClick={handleClick}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-        onFocus={handleMouseEnter}
-        onBlur={handleMouseLeave}
-        aria-label={`Source ${citation.cid}: ${snippetPreview}`}
-        title=""
-      >
-        {citation.cid}
-      </button>
-
-      {showTooltip && (
-        <div ref={tooltipRef} className="citation-tooltip" role="tooltip">
-          <div className="citation-tooltip-header">
-            <span className="citation-tooltip-badge">{citation.cid}</span>
-            <span className="citation-tooltip-score">
-              {Math.round(citation.score * 100)}% match
-            </span>
-          </div>
-          <p className="citation-tooltip-text">{snippetPreview}</p>
-          <div className="citation-tooltip-hint">Click to view source</div>
-        </div>
-      )}
-    </span>
-  );
-});
-
-/**
- * @deprecated Use SourceBadge instead
- */
-interface SourceChipProps {
-  cid: string;
-  onClick: () => void;
-  isActive?: boolean;
-}
-
-export const SourceChip = memo(function SourceChip({ cid, onClick, isActive = false }: SourceChipProps) {
-  return (
-    <button
-      className={cn('source-chip', isActive && 'active')}
-      onClick={onClick}
-      aria-label={`View source ${cid}`}
-    >
-      {cid}
-    </button>
-  );
-});
-

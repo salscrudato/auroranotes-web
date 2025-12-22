@@ -12,82 +12,10 @@ export function escapeRegex(str: string): string {
 }
 
 /**
- * Generate a unique ID
- */
-export function generateId(prefix = ''): string {
-  const timestamp = Date.now();
-  const random = Math.random().toString(36).slice(2, 8);
-  return prefix ? `${prefix}-${timestamp}-${random}` : `${timestamp}-${random}`;
-}
-
-/**
- * Debounce a function
- */
-export function debounce<T extends (...args: unknown[]) => unknown>(
-  fn: T,
-  delay: number
-): (...args: Parameters<T>) => void {
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
-  
-  return (...args: Parameters<T>) => {
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-    }
-    timeoutId = setTimeout(() => {
-      fn(...args);
-      timeoutId = null;
-    }, delay);
-  };
-}
-
-/**
- * Throttle a function
- */
-export function throttle<T extends (...args: unknown[]) => unknown>(
-  fn: T,
-  limit: number
-): (...args: Parameters<T>) => void {
-  let inThrottle = false;
-  
-  return (...args: Parameters<T>) => {
-    if (!inThrottle) {
-      fn(...args);
-      inThrottle = true;
-      setTimeout(() => {
-        inThrottle = false;
-      }, limit);
-    }
-  };
-}
-
-/**
- * Clamp a number between min and max
- */
-export function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
-}
-
-/**
  * Check if we're running in a browser environment
  */
-export function isBrowser(): boolean {
+function isBrowser(): boolean {
   return typeof window !== 'undefined';
-}
-
-/**
- * Check if the device supports touch
- */
-export function isTouchDevice(): boolean {
-  if (!isBrowser()) return false;
-  return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-}
-
-/**
- * Check if the user prefers reduced motion
- */
-export function prefersReducedMotion(): boolean {
-  if (!isBrowser()) return false;
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
 /**
@@ -95,13 +23,13 @@ export function prefersReducedMotion(): boolean {
  */
 export async function copyToClipboard(text: string): Promise<boolean> {
   if (!isBrowser()) return false;
-  
+
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       await navigator.clipboard.writeText(text);
       return true;
     }
-    
+
     // Fallback for older browsers
     const textArea = document.createElement('textarea');
     textArea.value = text;
@@ -118,38 +46,93 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 }
 
 /**
- * Format a number with locale-aware separators
- */
-export function formatNumber(num: number): string {
-  return num.toLocaleString();
-}
-
-/**
- * Pluralize a word based on count
- */
-export function pluralize(count: number, singular: string, plural?: string): string {
-  const word = count === 1 ? singular : (plural || `${singular}s`);
-  return `${formatNumber(count)} ${word}`;
-}
-
-/**
- * Check if a value is a non-empty string
- */
-export function isNonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.trim().length > 0;
-}
-
-/**
- * Sleep for a given number of milliseconds
- */
-export function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-/**
  * Create a class name string from conditionals
  */
 export function cn(...classes: (string | boolean | undefined | null)[]): string {
   return classes.filter(Boolean).join(' ');
 }
 
+/**
+ * Trigger haptic feedback for touch interactions
+ * Uses the Vibration API when available
+ */
+export function triggerHaptic(style: 'light' | 'medium' | 'heavy' = 'light'): void {
+  if (!isBrowser() || !('vibrate' in navigator)) return;
+
+  const patterns: Record<typeof style, number> = {
+    light: 10,
+    medium: 20,
+    heavy: 30,
+  };
+
+  try {
+    navigator.vibrate(patterns[style]);
+  } catch {
+    // Silently fail if vibration is not allowed
+  }
+}
+
+/**
+ * Format a phone number as user types
+ * Formats US numbers as (XXX) XXX-XXXX
+ * Returns both formatted display value and raw digits for E.164 conversion
+ */
+export function formatPhoneNumber(value: string): { formatted: string; digits: string } {
+  // Strip all non-digit characters except leading +
+  const hasPlus = value.startsWith('+');
+  const digits = value.replace(/\D/g, '');
+
+  // If it starts with country code (like +1), handle differently
+  if (hasPlus && digits.length > 0) {
+    // International format - just clean it up
+    if (digits.startsWith('1') && digits.length <= 11) {
+      // US number with country code
+      const areaCode = digits.slice(1, 4);
+      const firstPart = digits.slice(4, 7);
+      const secondPart = digits.slice(7, 11);
+
+      if (digits.length <= 1) return { formatted: '+1', digits };
+      if (digits.length <= 4) return { formatted: `+1 (${areaCode}`, digits };
+      if (digits.length <= 7) return { formatted: `+1 (${areaCode}) ${firstPart}`, digits };
+      return { formatted: `+1 (${areaCode}) ${firstPart}-${secondPart}`, digits };
+    }
+    // Other international - just return with +
+    return { formatted: `+${digits}`, digits };
+  }
+
+  // US format without country code
+  const areaCode = digits.slice(0, 3);
+  const firstPart = digits.slice(3, 6);
+  const secondPart = digits.slice(6, 10);
+
+  if (digits.length === 0) return { formatted: '', digits: '' };
+  if (digits.length <= 3) return { formatted: `(${areaCode}`, digits };
+  if (digits.length <= 6) return { formatted: `(${areaCode}) ${firstPart}`, digits };
+  return { formatted: `(${areaCode}) ${firstPart}-${secondPart}`, digits };
+}
+
+/**
+ * Convert a phone number to E.164 format for Firebase
+ * Assumes US (+1) if no country code provided
+ */
+export function toE164(phoneNumber: string): string {
+  const digits = phoneNumber.replace(/\D/g, '');
+
+  // Already has country code
+  if (phoneNumber.startsWith('+')) {
+    return `+${digits}`;
+  }
+
+  // Assume US
+  if (digits.length === 10) {
+    return `+1${digits}`;
+  }
+
+  // Already includes country code without +
+  if (digits.length === 11 && digits.startsWith('1')) {
+    return `+${digits}`;
+  }
+
+  // Return as-is with + prefix
+  return `+${digits}`;
+}

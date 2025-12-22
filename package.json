@@ -1,13 +1,18 @@
 {
   "name": "auroranotes-web",
+  "version": "1.0.0",
+  "description": "AI-powered note-taking with conversational RAG",
   "private": true,
-  "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:emulator": "VITE_USE_FIREBASE_EMULATOR=true vite",
+    "emulators": "firebase emulators:start --only auth",
     "build": "tsc -b && vite build",
-    "lint": "eslint .",
     "preview": "vite preview",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc -b --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage"
@@ -16,7 +21,8 @@
     "firebase": "^12.7.0",
     "lucide-react": "^0.561.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "react-markdown": "^10.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

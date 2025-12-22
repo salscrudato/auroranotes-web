@@ -5,13 +5,17 @@
  */
 
 import { useState, useCallback, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Sparkles, FileText, LogOut, Plus, MessageSquare, Search } from 'lucide-react';
 import { useAuth, getUserInitials } from '../../auth';
 import { useToast } from '../common/useToast';
+import { ErrorBoundary } from '../common/ErrorBoundary';
+import { PanelFallback } from '../common/PanelFallback';
 import { NotesPanel } from '../notes/NotesPanel';
 import { ChatPanel } from '../chat/ChatPanel';
 import { NoteDetailDrawer } from '../notes/NoteDetailDrawer';
 import { SkipLink } from '../common/SkipLink';
+import { OfflineBanner } from '../common/OfflineBanner';
 import { CommandPalette, type CommandAction } from '../common/CommandPalette';
 import { useCommandPalette } from '../../hooks/useCommandPalette';
 import type { Note } from '../../lib/types';
@@ -28,6 +32,7 @@ export function AppShell() {
   const [drawerHighlight, setDrawerHighlight] = useState<string | undefined>();
   const [searchingForNote, setSearchingForNote] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{ top: number; right: number }>({ top: 60, right: 16 });
   const { showToast } = useToast();
   const { user, signOut } = useAuth();
   const commandPalette = useCommandPalette();
@@ -38,6 +43,8 @@ export function AppShell() {
   const loadMoreRef = useRef<(() => Promise<void>) | null>(null);
   // Ref to focus notes composer
   const notesComposerRef = useRef<HTMLTextAreaElement | null>(null);
+  // Ref for profile avatar button for dropdown positioning
+  const profileAvatarRef = useRef<HTMLButtonElement | null>(null);
 
   const handleSignOut = useCallback(async () => {
     try {
@@ -178,22 +185,71 @@ export function AppShell() {
   return (
     <div className="app-shell">
       <SkipLink targetId="main-content" />
+      <OfflineBanner />
       <div className="app-container">
         {/* Header */}
         <header className="app-header">
+          {/* Left: Logo and Title */}
           <div className="app-title">
-            <div className="app-logo">
+            <div className="app-logo" aria-hidden="true">
               <Sparkles size={18} />
             </div>
-            <h1>Aurora</h1>
-            <span className="tagline">Intelligent notes</span>
+            <h1>NotesGPT</h1>
           </div>
 
+          {/* Center: Tab Toggle - Segmented Control with sliding indicator */}
+          <div
+            className={`header-tabs ${activeTab === 'chat' ? 'chat-active' : ''}`}
+            role="tablist"
+            aria-label="View switcher"
+          >
+            <button
+              role="tab"
+              aria-selected={activeTab === 'notes'}
+              className={activeTab === 'notes' ? 'active' : ''}
+              onClick={() => setActiveTab('notes')}
+              aria-label="Notes view"
+            >
+              <FileText size={15} aria-hidden="true" />
+              <span>Notes</span>
+            </button>
+            <button
+              role="tab"
+              aria-selected={activeTab === 'chat'}
+              className={activeTab === 'chat' ? 'active' : ''}
+              onClick={() => setActiveTab('chat')}
+              aria-label="Chat view"
+            >
+              <Sparkles size={15} aria-hidden="true" />
+              <span>Chat</span>
+            </button>
+          </div>
+
+          {/* Right: Actions */}
           <div className="header-actions">
+            {/* Search/Command Palette Button */}
+            <button
+              className="header-search-btn"
+              onClick={commandPalette.open}
+              aria-label="Search notes (⌘K)"
+              title="Search notes (⌘K)"
+            >
+              <Search size={18} />
+            </button>
             <div className="profile-menu-container">
               <button
+                ref={profileAvatarRef}
                 className="profile-avatar"
-                onClick={() => setShowProfileMenu(!showProfileMenu)}
+                onClick={() => {
+                  if (profileAvatarRef.current) {
+                    const rect = profileAvatarRef.current.getBoundingClientRect();
+                    setMenuPosition({
+                      top: rect.bottom + 12,
+                      right: window.innerWidth - rect.right,
+                    });
+                  }
+                  setShowProfileMenu(!showProfileMenu);
+                }}
                 title={user?.displayName || user?.email || 'Account'}
                 aria-label="Account menu"
                 aria-expanded={showProfileMenu}
@@ -213,13 +269,20 @@ export function AppShell() {
                 )}
               </button>
 
-              {showProfileMenu && (
+              {showProfileMenu && createPortal(
                 <>
                   <div
                     className="profile-menu-backdrop"
                     onClick={() => setShowProfileMenu(false)}
                   />
-                  <div className="profile-menu" role="menu">
+                  <div
+                    className="profile-menu"
+                    role="menu"
+                    style={{
+                      top: menuPosition.top,
+                      right: menuPosition.right,
+                    }}
+                  >
                     <div className="profile-menu-header">
                       <span className="profile-menu-name">
                         {user?.displayName || 'User'}
@@ -229,7 +292,7 @@ export function AppShell() {
                       </span>
                     </div>
                     <button
-                      className="profile-menu-item"
+                      className="profile-menu-item danger"
                       onClick={handleSignOut}
                       role="menuitem"
                     >
@@ -237,46 +300,29 @@ export function AppShell() {
                       Sign Out
                     </button>
                   </div>
-                </>
+                </>,
+                document.body
               )}
             </div>
           </div>
         </header>
 
-        {/* Mobile Tabs */}
-        <div className="mobile-tabs" role="tablist">
-          <button
-            role="tab"
-            aria-selected={activeTab === 'notes'}
-            className={activeTab === 'notes' ? 'active' : ''}
-            onClick={() => setActiveTab('notes')}
-          >
-            <FileText size={16} />
-            Notes
-          </button>
-          <button
-            role="tab"
-            aria-selected={activeTab === 'chat'}
-            className={activeTab === 'chat' ? 'active' : ''}
-            onClick={() => setActiveTab('chat')}
-          >
-            <Sparkles size={16} />
-            Ask AI
-          </button>
-        </div>
-
         {/* Main Grid */}
         <main id="main-content" className="main-grid" tabIndex={-1}>
-          <NotesPanel
-            className={activeTab !== 'notes' ? 'hidden' : ''}
-            highlightNoteId={highlightNoteId}
-            onNoteHighlighted={handleNoteHighlighted}
-            onNotesLoaded={handleNotesLoaded}
-          />
-          <ChatPanel
-            className={activeTab !== 'chat' ? 'hidden' : ''}
-            onOpenNote={handleOpenNote}
-          />
+          <ErrorBoundary fallback={<PanelFallback title="Notes" onRetry={() => window.location.reload()} />}>
+            <NotesPanel
+              className={activeTab !== 'notes' ? 'hidden' : ''}
+              highlightNoteId={highlightNoteId}
+              onNoteHighlighted={handleNoteHighlighted}
+              onNotesLoaded={handleNotesLoaded}
+            />
+          </ErrorBoundary>
+          <ErrorBoundary fallback={<PanelFallback title="Chat" onRetry={() => window.location.reload()} />}>
+            <ChatPanel
+              className={activeTab !== 'chat' ? 'hidden' : ''}
+              onOpenNote={handleOpenNote}
+            />
+          </ErrorBoundary>
         </main>
 
         {/* Loading overlay when searching for note */}
@@ -300,6 +346,8 @@ export function AppShell() {
           isOpen={commandPalette.isOpen}
           onClose={commandPalette.close}
           actions={commandActions}
+          recentActionIds={commandPalette.recentActionIds}
+          onActionExecuted={commandPalette.trackAction}
         />
       </div>
     </div>

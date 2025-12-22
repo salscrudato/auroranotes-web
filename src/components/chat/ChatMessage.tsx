@@ -3,14 +3,44 @@
  * Renders chat messages with inline source chips and sources summary
  */
 
-import { memo, useCallback, useMemo } from 'react';
-import { BookOpen, AlertCircle, RotateCcw, Copy, ThumbsUp, ThumbsDown, Send, X } from 'lucide-react';
-import type { ChatMessage as ChatMessageType, Source, FeedbackRating } from '../../lib/types';
+import { memo, useCallback, useMemo, useState, useEffect, useRef } from 'react';
+import { BookOpen, AlertCircle, AlertTriangle, RotateCcw, Copy, ThumbsUp, ThumbsDown, Send, X } from 'lucide-react';
+import type { ChatMessage as ChatMessageType, Source, FeedbackRating, ConfidenceLevel } from '../../lib/types';
 import { parseSources, getReferencedSources } from '../../lib/citations';
 import { formatRelativeTime } from '../../lib/format';
 import { copyToClipboard, cn } from '../../lib/utils';
 import { useToast } from '../common/useToast';
+import { useAnnounce } from '../common/LiveRegion';
 import { SourceRefChip, SourceBadge } from './CitationChip';
+import { ChatMarkdown } from './ChatMarkdown';
+import { ActionResult } from './ActionResult';
+
+/** Streaming elapsed time indicator */
+function StreamingElapsed({ startTime }: { startTime: Date }) {
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startTime.getTime()) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [startTime]);
+
+  // Only show after 3 seconds
+  if (elapsed < 3) return null;
+
+  const minutes = Math.floor(elapsed / 60);
+  const seconds = elapsed % 60;
+  const timeStr = minutes > 0
+    ? `${minutes}:${seconds.toString().padStart(2, '0')}`
+    : `${seconds}s`;
+
+  return (
+    <div className="streaming-elapsed">
+      <span>Generating... {timeStr}</span>
+    </div>
+  );
+}
 
 interface FeedbackState {
   hasSent: boolean;
@@ -29,6 +59,14 @@ interface ChatMessageProps {
   onFeedback?: (rating: FeedbackRating, comment?: string) => void;
   onFeedbackCommentChange?: (comment: string) => void;
   onCancelFeedback?: () => void;
+  /** Suggested follow-up questions */
+  suggestedQuestions?: string[];
+  /** Callback when a suggested question is clicked */
+  onSuggestedQuestion?: (question: string) => void;
+  /** Whether this is the last message (for showing suggestions) */
+  isLastMessage?: boolean;
+  /** Callback when a note is clicked from action results */
+  onNoteClick?: (noteId: string) => void;
 }
 
 export const ChatMessage = memo(function ChatMessage({
@@ -41,13 +79,36 @@ export const ChatMessage = memo(function ChatMessage({
   onFeedback,
   onFeedbackCommentChange,
   onCancelFeedback,
+  suggestedQuestions,
+  onSuggestedQuestion,
+  isLastMessage = false,
+  onNoteClick,
 }: ChatMessageProps) {
   const { showToast } = useToast();
+  const announce = useAnnounce();
+  const wasStreamingRef = useRef(false);
   const isUser = message.role === 'user';
   const isError = message.isError;
   const isStreaming = message.isStreaming;
   const segments = parseSources(message.content, message.sources);
-  const referencedSources = getReferencedSources(message.content, message.sources);
+
+  // Announce when streaming completes for screen readers
+  useEffect(() => {
+    if (wasStreamingRef.current && !isStreaming && !isUser && !isError) {
+      const sourceCount = message.sources?.length || 0;
+      const announcement = sourceCount > 0
+        ? `Response complete with ${sourceCount} source${sourceCount === 1 ? '' : 's'}`
+        : 'Response complete';
+      announce(announcement);
+    }
+    wasStreamingRef.current = isStreaming || false;
+  }, [isStreaming, isUser, isError, message.sources?.length, announce]);
+
+  // Memoize referenced sources to avoid recalculation on every render
+  const referencedSources = useMemo(
+    () => getReferencedSources(message.content, message.sources),
+    [message.content, message.sources]
+  );
 
   // Get all sources: combine cited sources with context sources, avoiding duplicates
   const allSources = useMemo(() => {
@@ -63,6 +124,27 @@ export const ChatMessage = memo(function ChatMessage({
   // Show retry button for 503 and 5xx errors
   const showRetry = isError && onRetry && (message.errorCode === 503 || (message.errorCode && message.errorCode >= 500));
 
+  // Confidence warning for low-confidence responses
+  const confidenceWarning = useMemo(() => {
+    if (isUser || isError || isStreaming || !message.meta?.confidence) return null;
+    const level = message.meta.confidence;
+    if (level === 'low') {
+      return {
+        level: 'low' as ConfidenceLevel,
+        message: 'This response may be less accurate. Consider verifying with your notes.',
+        severe: false,
+      };
+    }
+    if (level === 'none') {
+      return {
+        level: 'none' as ConfidenceLevel,
+        message: 'No relevant notes found. This response is based on general knowledge.',
+        severe: true,
+      };
+    }
+    return null;
+  }, [isUser, isError, isStreaming, message.meta?.confidence]);
+
   const handleCopy = useCallback(async () => {
     const success = await copyToClipboard(message.content);
     showToast(success ? 'Copied' : 'Failed to copy', success ? 'success' : 'error');
@@ -70,20 +152,30 @@ export const ChatMessage = memo(function ChatMessage({
 
   return (
     <div className={cn('chat-message', isUser ? 'user' : 'assistant', isStreaming && 'streaming')}>
-      <div className={cn('chat-bubble', isError && 'chat-bubble-error')}>
+      <div className={cn('chat-bubble', isError && 'chat-bubble-error')} aria-busy={isStreaming}>
         {isError && <AlertCircle size={14} className="error-icon" />}
-        {segments.map((segment, i) => {
-          if (segment.type === 'source' && segment.source) {
-            return (
-              <SourceRefChip
-                key={`${segment.source.id}-${i}`}
-                source={segment.source}
-                onClick={onSourceClick}
-              />
-            );
-          }
-          return <span key={i}>{segment.content}</span>;
-        })}
+        {isUser || isError ? (
+          // User messages and errors: render as plain text with source chips
+          segments.map((segment, i) => {
+            if (segment.type === 'source' && segment.source) {
+              return (
+                <SourceRefChip
+                  key={`${segment.source.id}-${i}`}
+                  source={segment.source}
+                  onClick={onSourceClick}
+                />
+              );
+            }
+            return <span key={i}>{segment.content}</span>;
+          })
+        ) : (
+          // Assistant messages: render as markdown with source citations
+          <ChatMarkdown
+            content={message.content}
+            sources={message.sources}
+            onSourceClick={onSourceClick}
+          />
+        )}
         {isStreaming && <span className="streaming-cursor" />}
         {showRetry && (
           <button className="btn btn-sm btn-ghost retry-btn" onClick={onRetry}>
@@ -92,6 +184,22 @@ export const ChatMessage = memo(function ChatMessage({
           </button>
         )}
       </div>
+
+      {/* Streaming progress indicator */}
+      {isStreaming && <StreamingElapsed startTime={message.timestamp} />}
+
+      {/* Action result display */}
+      {!isUser && !isError && !isStreaming && message.action && (
+        <ActionResult action={message.action} onNoteClick={onNoteClick} />
+      )}
+
+      {/* Confidence warning for low-confidence responses */}
+      {confidenceWarning && (
+        <div className={cn('confidence-warning', confidenceWarning.severe && 'severe')}>
+          <AlertTriangle size={14} />
+          <span>{confidenceWarning.message}</span>
+        </div>
+      )}
 
       {/* Message meta row: sources + feedback on same line */}
       {!isUser && !isError && !isStreaming && (
@@ -202,6 +310,21 @@ export const ChatMessage = memo(function ChatMessage({
               <Copy size={12} />
             </button>
           )}
+        </div>
+      )}
+
+      {/* Suggested follow-up questions */}
+      {isLastMessage && !isUser && !isError && !isStreaming && suggestedQuestions && suggestedQuestions.length > 0 && onSuggestedQuestion && (
+        <div className="suggested-questions">
+          {suggestedQuestions.slice(0, 3).map((question, idx) => (
+            <button
+              key={idx}
+              className="suggestion-chip"
+              onClick={() => onSuggestedQuestion(question)}
+            >
+              {question}
+            </button>
+          ))}
         </div>
       )}
     </div>

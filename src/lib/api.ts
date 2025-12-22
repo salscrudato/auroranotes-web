@@ -22,6 +22,7 @@ import type {
   ChatMeta,
   FeedbackRating,
   FeedbackResponse,
+  TranscriptionResponse,
 } from './types';
 import { API, NOTES, CHAT } from './constants';
 
@@ -59,11 +60,15 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
       const token = await tokenGetter();
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
+      } else {
+        console.warn('[API] tokenGetter returned null - user may not be authenticated');
       }
     } catch (err) {
-      console.error('Failed to get auth token:', err);
+      console.error('[API] Failed to get auth token:', err);
       // Continue without token - API will return 401 if auth is required
     }
+  } else {
+    console.warn('[API] No tokenGetter set - API calls will be unauthenticated');
   }
 
   return headers;
@@ -104,6 +109,32 @@ export function validateChatMessage(message: string): { valid: boolean; error?: 
 // ============================================
 // Error Handling
 // ============================================
+
+/**
+ * Extract error message and code from API error response
+ * Handles both string and object formats from backend
+ */
+function extractErrorInfo(
+  body: ApiError | null,
+  fallbackMessage: string
+): { message: string; code?: string } {
+  if (!body?.error) {
+    return { message: fallbackMessage };
+  }
+
+  if (typeof body.error === 'string') {
+    return { message: body.error, code: body.code };
+  }
+
+  if (typeof body.error === 'object' && body.error.message) {
+    return {
+      message: body.error.message,
+      code: body.code || body.error.code,
+    };
+  }
+
+  return { message: fallbackMessage, code: body.code };
+}
 
 /**
  * Custom error class for API errors with enhanced metadata
@@ -238,14 +269,15 @@ async function singleRequest<T>(
 
     if (!res.ok) {
       const body = await safeJson<ApiError>(res);
+      const { message, code } = extractErrorInfo(body, `Request failed: ${res.status}`);
 
       // For 429, get retryAfter from body (in seconds per API spec)
       const retryAfterSeconds = body?.retryAfter ?? (res.status === 429 ? 30 : undefined);
 
       const error = new ApiRequestError(
-        body?.error || `Request failed: ${res.status}`,
+        message,
         res.status,
-        body?.code,
+        code,
         retryAfterSeconds,
         requestId ?? undefined
       );
@@ -382,7 +414,8 @@ export async function getHealth(): Promise<HealthResponse> {
  */
 export async function listNotes(
   cursor?: string,
-  limit = 50
+  limit = 50,
+  signal?: AbortSignal
 ): Promise<NotesListResponse> {
   const params = new URLSearchParams();
   params.set('limit', String(Math.min(Math.max(1, limit), 100))); // Clamp 1-100
@@ -391,7 +424,7 @@ export async function listNotes(
   const path = `${API.ENDPOINTS.NOTES}?${params.toString()}`;
   const headers = await getAuthHeaders();
 
-  return await request<NotesListResponse>(path, { headers });
+  return await request<NotesListResponse>(path, { headers, signal });
 }
 
 /**
@@ -588,12 +621,13 @@ export async function sendChatMessageStreaming(
     // Handle error responses
     if (!response.ok) {
       const body = await safeJson<ApiError>(response);
+      const { message, code } = extractErrorInfo(body, `Request failed: ${response.status}`);
       const retryAfterSeconds = body?.retryAfter ?? body?.retryAfterMs ? Math.ceil((body?.retryAfterMs || 0) / 1000) : undefined;
 
       throw new ApiRequestError(
-        body?.error || `Request failed: ${response.status}`,
+        message,
         response.status,
-        body?.code,
+        code,
         retryAfterSeconds,
         getRequestId(response) ?? undefined
       );
@@ -718,3 +752,228 @@ export function getApiBaseUrl(): string {
   return getApiBase();
 }
 
+// ============================================
+// Transcription
+// ============================================
+
+/**
+ * Transcribe audio to text using the backend transcription service
+ * Typical latency: 1-5 seconds depending on audio length
+ *
+ * @param audioBlob - Audio data as a Blob
+ * @returns Transcription result with text and metadata
+ * @throws {ApiRequestError} If transcription fails
+ */
+export async function transcribeAudio(audioBlob: Blob): Promise<TranscriptionResponse> {
+  const apiBase = getApiBase();
+
+  if (!apiBase) {
+    throw new ApiRequestError(
+      'Missing VITE_API_BASE. Add it to .env.local and restart the dev server.',
+      0,
+      'MISSING_CONFIG'
+    );
+  }
+
+  // Get auth token
+  let authToken: string | null = null;
+  if (tokenGetter) {
+    try {
+      authToken = await tokenGetter();
+    } catch (err) {
+      console.error('Failed to get auth token:', err);
+    }
+  }
+
+  // Build form data
+  const formData = new FormData();
+  formData.append('audio', audioBlob, 'recording.webm');
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API.TIMEOUTS.TRANSCRIBE);
+
+  try {
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+
+    const res = await fetch(`${apiBase}${API.ENDPOINTS.TRANSCRIBE}`, {
+      method: 'POST',
+      headers,
+      body: formData,
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      const body = await safeJson<ApiError>(res);
+      const { message, code } = extractErrorInfo(body, `Transcription failed: ${res.status}`);
+      throw new ApiRequestError(message, res.status, code);
+    }
+
+    return await res.json();
+  } catch (err) {
+    clearTimeout(timeoutId);
+
+    if (err instanceof ApiRequestError) {
+      throw err;
+    }
+
+    if (err instanceof Error) {
+      if (err.name === 'AbortError') {
+        throw new ApiRequestError('Transcription timed out', 0, 'TIMEOUT');
+      }
+      throw new ApiRequestError(err.message, 0, 'NETWORK_ERROR');
+    }
+
+    throw new ApiRequestError('Transcription failed');
+  }
+}
+
+// ============================================
+// Transcript Enhancement
+// ============================================
+
+/** Callbacks for streaming transcript enhancement */
+export interface EnhanceTranscriptCallbacks {
+  onToken?: (token: string) => void;
+  onComplete?: (enhancedText: string) => void;
+  onError?: (error: string) => void;
+}
+
+/**
+ * Enhance a voice transcript using AI
+ * Cleans up grammar, removes filler words, adds punctuation
+ * Uses streaming for real-time feedback
+ *
+ * @param rawTranscript - The raw transcript from speech recognition
+ * @param callbacks - Event handlers for streaming tokens
+ * @returns AbortController to cancel the enhancement
+ */
+export async function enhanceTranscript(
+  rawTranscript: string,
+  callbacks: EnhanceTranscriptCallbacks
+): Promise<AbortController> {
+  const apiBase = getApiBase();
+
+  if (!apiBase) {
+    throw new ApiRequestError(
+      'Missing VITE_API_BASE. Add it to .env.local and restart the dev server.',
+      0,
+      'MISSING_CONFIG'
+    );
+  }
+
+  const trimmed = rawTranscript.trim();
+  if (!trimmed) {
+    callbacks.onError?.('No transcript to enhance');
+    return new AbortController();
+  }
+
+  // Create a special prompt for transcript enhancement
+  const enhancePrompt = `You are a transcript editor. Clean up this voice transcript by:
+1. Fixing grammar and punctuation
+2. Removing filler words (um, uh, like, you know, so, basically, actually)
+3. Correcting obvious speech-to-text errors based on context
+4. Keeping the original meaning and intent intact
+5. Making it read naturally as written text
+
+IMPORTANT:
+- Output ONLY the cleaned transcript, nothing else
+- Do NOT add explanations, headers, or commentary
+- Do NOT change the meaning or add new information
+- Keep it concise
+
+Transcript to clean:
+"""
+${trimmed}
+"""`;
+
+  const controller = new AbortController();
+  const headers = await getAuthHeaders();
+
+  try {
+    const response = await fetch(`${apiBase}${API.ENDPOINTS.CHAT}`, {
+      method: 'POST',
+      headers: {
+        ...headers,
+        'Accept': 'text/event-stream',
+      },
+      body: JSON.stringify({
+        message: enhancePrompt,
+        stream: true,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const body = await safeJson<ApiError>(response);
+      const { message, code } = extractErrorInfo(body, `Enhancement failed: ${response.status}`);
+      throw new ApiRequestError(message, response.status, code);
+    }
+
+    // Process SSE stream
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new ApiRequestError('No response body', 0, 'STREAM_ERROR');
+    }
+
+    let fullText = '';
+    const decoder = new TextDecoder();
+
+    (async () => {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            if (!line.startsWith('data: ')) continue;
+
+            try {
+              const event: StreamEvent = JSON.parse(line.slice(6));
+
+              switch (event.type) {
+                case 'token':
+                  if (event.content) {
+                    fullText += event.content;
+                    callbacks.onToken?.(event.content);
+                  }
+                  break;
+                case 'done':
+                  callbacks.onComplete?.(fullText.trim());
+                  break;
+                case 'error':
+                  callbacks.onError?.(event.error || 'Enhancement failed');
+                  break;
+                // Ignore 'sources' event for enhancement
+              }
+            } catch {
+              // Skip malformed JSON lines
+            }
+          }
+        }
+      } catch (err) {
+        if (err instanceof Error && err.name !== 'AbortError') {
+          callbacks.onError?.(err.message);
+        }
+      }
+    })();
+
+    return controller;
+  } catch (err) {
+    if (err instanceof ApiRequestError) {
+      throw err;
+    }
+    if (err instanceof Error) {
+      throw new ApiRequestError(err.message, 0, 'NETWORK_ERROR');
+    }
+    throw new ApiRequestError('Enhancement failed');
+  }
+}

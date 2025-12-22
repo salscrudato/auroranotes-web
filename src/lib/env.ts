@@ -71,33 +71,36 @@ function isValidUrl(str: string): boolean {
 }
 
 /**
- * Log environment validation results to console
+ * Log environment validation results to console (dev only)
+ * eslint-disable-next-line no-console - Intentional dev logging utility
  */
 export function logEnvValidation(): void {
   const result = validateEnv();
   const config = getEnvConfig();
 
   if (config.isDev) {
+    /* eslint-disable no-console */
     console.group('🔧 Environment Configuration');
     console.log('API Base:', config.apiBase || '(not set)');
     console.log('API Key:', config.apiKey ? '(set)' : '(not set)');
     console.log('Mode:', config.isDev ? 'development' : 'production');
-    
+
     if (result.errors.length > 0) {
       console.error('❌ Errors:');
       result.errors.forEach(err => console.error('  -', err));
     }
-    
+
     if (result.warnings.length > 0) {
       console.warn('⚠️ Warnings:');
       result.warnings.forEach(warn => console.warn('  -', warn));
     }
-    
+
     if (result.isValid && result.warnings.length === 0) {
       console.log('✅ All environment variables are valid');
     }
-    
+
     console.groupEnd();
+    /* eslint-enable no-console */
   }
 }
 

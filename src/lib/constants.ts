@@ -13,12 +13,14 @@ export const API = {
     NOTES: '/notes',
     CHAT: '/chat',
     FEEDBACK: '/feedback',
+    TRANSCRIBE: '/transcribe',
   },
   TIMEOUTS: {
     DEFAULT: 10000,      // 10 seconds
     HEALTH: 5000,        // 5 seconds
     CHAT: 30000,         // 30 seconds for AI responses
     STREAM: 60000,       // 60 seconds for streaming responses
+    TRANSCRIBE: 30000,   // 30 seconds for audio transcription
   },
   RETRY: {
     MAX_RETRIES: 1,
@@ -45,7 +47,6 @@ export const NOTES = {
 
 export const CHAT = {
   MAX_MESSAGE_LENGTH: 2000,
-  HISTORY_STORAGE_KEY: 'aurora-chat-history',
   MAX_HISTORY_MESSAGES: 100,
 } as const;
 
@@ -55,13 +56,6 @@ export const CHAT = {
 
 export const UI = {
   TOAST_DURATION_MS: 3000,
-  ANIMATION: {
-    FAST: 150,
-    NORMAL: 200,
-    SLOW: 300,
-  },
-  HEALTH_CHECK_INTERVAL_MS: 30000,
-  SKELETON_COUNT: 3,
 } as const;
 
 // ===========================================
@@ -69,18 +63,7 @@ export const UI = {
 // ===========================================
 
 export const STORAGE_KEYS = {
-  THEME: 'aurora-theme',
   CHAT_HISTORY: 'aurora-chat-history',
-  USER_PREFERENCES: 'aurora-preferences',
-} as const;
-
-// ===========================================
-// Validation
-// ===========================================
-
-export const VALIDATION = {
-  MIN_SEARCH_LENGTH: 1,
-  MAX_SEARCH_LENGTH: 200,
 } as const;
 
 // ===========================================

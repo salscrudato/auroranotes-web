@@ -224,6 +224,7 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
           contextSources: response.contextSources,
           timestamp: new Date(),
           meta: response.meta,
+          action: response.meta?.action,  // Include action metadata if present
         };
 
         setMessages(prev => [...prev, assistantMessage]);

@@ -77,8 +77,12 @@ export function formatFullTimestamp(d: Date | null): string {
 export function normalizeNote(raw: RawNote): Note {
   return {
     id: raw.id || `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    title: raw.title,
     text: raw.text || '',
     tenantId: raw.tenantId || 'public',
+    processingStatus: raw.processingStatus,
+    tags: raw.tags,
+    metadata: raw.metadata,
     createdAt: toDate(raw.createdAt),
     updatedAt: toDate(raw.updatedAt),
   };
@@ -98,5 +102,63 @@ export function truncateText(text: string, maxLength: number): string {
 export function shortId(id: string): string {
   if (!id || id.startsWith('temp-')) return '';
   return id.slice(0, 8);
+}
+
+/**
+ * Get date group label for a date (Today, Yesterday, This Week, etc)
+ * Used for grouping notes in Apple Notes style
+ */
+export function getDateGroup(d: Date | null): string {
+  if (!d) return 'Unknown';
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const lastWeek = new Date(today);
+  lastWeek.setDate(lastWeek.getDate() - 7);
+  const lastMonth = new Date(today);
+  lastMonth.setMonth(lastMonth.getMonth() - 1);
+
+  const noteDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+  if (noteDate.getTime() === today.getTime()) {
+    return 'Today';
+  }
+  if (noteDate.getTime() === yesterday.getTime()) {
+    return 'Yesterday';
+  }
+  if (noteDate >= lastWeek) {
+    return 'This Week';
+  }
+  if (noteDate >= lastMonth) {
+    return 'This Month';
+  }
+
+  // For older dates, show month and year
+  return d.toLocaleDateString(undefined, {
+    month: 'long',
+    year: 'numeric'
+  });
+}
+
+/**
+ * Group notes by date category
+ */
+export function groupNotesByDate<T extends { createdAt: Date | null }>(
+  notes: T[]
+): { group: string; notes: T[] }[] {
+  const groups = new Map<string, T[]>();
+
+  for (const note of notes) {
+    const group = getDateGroup(note.createdAt);
+    if (!groups.has(group)) {
+      groups.set(group, []);
+    }
+    groups.get(group)!.push(note);
+  }
+
+  // Convert to array, maintaining insertion order (most recent first)
+  return Array.from(groups.entries()).map(([group, notes]) => ({ group, notes }));
 }
 

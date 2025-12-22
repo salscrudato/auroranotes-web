@@ -3,10 +3,11 @@
  * Modal for editing an existing note
  */
 
-import { memo, useState, useEffect, useRef } from 'react';
+import { memo, useState, useEffect, useRef, useCallback } from 'react';
 import { X, Save } from 'lucide-react';
 import type { Note } from '../../lib/types';
 import { NOTES } from '../../lib/constants';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 interface EditNoteModalProps {
   note: Note | null;
@@ -26,52 +27,33 @@ export const EditNoteModal = memo(function EditNoteModal({
   // Initialize text from note - component is remounted with key when note changes
   const [text, setText] = useState(() => note?.text ?? '');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const previousActiveElement = useRef<HTMLElement | null>(null);
 
-  // Store focus and auto-focus textarea when opened
+  // Use focus trap hook for proper focus management
+  const modalRef = useFocusTrap<HTMLDivElement>({
+    enabled: isOpen && !!note,
+    onEscape: onClose,
+    restoreFocus: true,
+  });
+
+  // Auto-focus textarea when opened
   useEffect(() => {
     if (note && isOpen) {
-      // Store current focused element for restoration
-      previousActiveElement.current = document.activeElement as HTMLElement;
       // Focus textarea after a brief delay to ensure modal is visible
       setTimeout(() => textareaRef.current?.focus(), 100);
     }
   }, [note, isOpen]);
 
-  // Restore focus when closed
-  useEffect(() => {
-    if (!isOpen && previousActiveElement.current) {
-      previousActiveElement.current.focus();
-      previousActiveElement.current = null;
-    }
-  }, [isOpen]);
-
-  // Handle escape key
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     if (!note || !text.trim() || isSaving) return;
     onSave(note.id, text.trim());
-  };
+  }, [note, text, isSaving, onSave]);
 
-  const handleBackdropClick = (e: React.MouseEvent) => {
+  const handleBackdropClick = useCallback((e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
       onClose();
     }
-  };
+  }, [onClose]);
 
   const charCount = text.length;
   const isOverLimit = charCount > NOTES.MAX_LENGTH;
@@ -81,14 +63,15 @@ export const EditNoteModal = memo(function EditNoteModal({
   if (!isOpen || !note) return null;
 
   return (
-    <div 
-      className="modal-backdrop animate-fade-in" 
+    <div
+      className="modal-backdrop animate-fade-in"
       onClick={handleBackdropClick}
       role="dialog"
       aria-modal="true"
       aria-labelledby="edit-note-title"
     >
-      <div 
+      <div
+        ref={modalRef}
         className="modal edit-note-modal animate-scale-in"
         onClick={(e) => e.stopPropagation()}
       >
@@ -112,10 +95,20 @@ export const EditNoteModal = memo(function EditNoteModal({
             placeholder="Edit your note..."
             maxLength={NOTES.MAX_LENGTH + 100} // Allow some overflow for warning
             disabled={isSaving}
+            aria-label="Edit note content"
+            aria-invalid={isOverLimit}
+            aria-describedby="edit-note-char-count"
           />
 
-          <div className={`chat-char-count ${isOverLimit ? 'over-limit' : ''}`}>
-            {charCount} / {NOTES.MAX_LENGTH}
+          <div
+            id="edit-note-char-count"
+            className={`chat-char-count ${isOverLimit ? 'over-limit' : ''}`}
+            role={isOverLimit ? 'alert' : undefined}
+          >
+            {isOverLimit
+              ? `Note too long: ${charCount.toLocaleString()} / ${NOTES.MAX_LENGTH.toLocaleString()}`
+              : `${charCount.toLocaleString()} / ${NOTES.MAX_LENGTH.toLocaleString()}`
+            }
           </div>
 
           <div className="modal-footer">

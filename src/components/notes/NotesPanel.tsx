@@ -2,26 +2,26 @@
  * NotesPanel component
  * Sticky composer, scrollable notes list, keyboard shortcuts, optimistic updates
  * Now with cursor-based pagination for 100k+ notes support
- * Includes search and quick filters (Today/This week/All)
  */
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { FileText, Search, ArrowUp } from 'lucide-react';
+import { Search, ArrowUp, Mic, Play, Pause, Check, X, Sparkles, AlertTriangle, RotateCcw, Tag, FileText, Paperclip } from 'lucide-react';
 import type { Note } from '../../lib/types';
-import { normalizeNote } from '../../lib/format';
+import { normalizeNote, groupNotesByDate } from '../../lib/format';
+import { triggerHaptic } from '../../lib/utils';
 import { listNotes, createNote, deleteNote, updateNote, ApiRequestError } from '../../lib/api';
+import { NOTES } from '../../lib/constants';
 import { useToast } from '../common/useToast';
+import { useAnnounce } from '../common/LiveRegion';
+import { useSpeechToText } from '../../hooks/useSpeechToText';
+import { useNoteClassifier } from '../../hooks/useNoteClassifier';
+import { useFileUpload } from '../../hooks/useFileUpload';
 import { NoteCard } from './NoteCard';
 import { NoteCardSkeleton } from './NoteCardSkeleton';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { EditNoteModal } from './EditNoteModal';
 import { EmptyState } from '../common/EmptyState';
-
-const MAX_NOTE_LENGTH = 5000;
-const PAGE_SIZE = 50;
-const SEARCH_DEBOUNCE_MS = 300;
-
-type FilterType = 'all' | 'today' | 'week';
+import { FileAttachmentList } from './FileAttachment';
 
 interface NotesPanelProps {
   className?: string;
@@ -41,10 +41,9 @@ export function NotesPanel({ className = '', highlightNoteId, onNoteHighlighted,
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
 
-  // Search and filter state
+  // Search state
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [composerFocused, setComposerFocused] = useState(false);
 
   // Edit and delete state
@@ -62,13 +61,135 @@ export function NotesPanel({ className = '', highlightNoteId, onNoteHighlighted,
   const initialLoadRef = useRef(false);
   const loadingRef = useRef(false);
   const loadingMoreRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const { showToast } = useToast();
+  const announce = useAnnounce();
 
-  // Track mounted state for cleanup
+  // Speech-to-text for voice input
+  // Note: autoEnhance is disabled because the enhancement uses the chat API
+  // which performs RAG retrieval and responds as if asking a question.
+  // Raw transcription is used directly for note drafting.
+  const {
+    state: recordingState,
+    isSupported: isSpeechSupported,
+    startRecording,
+    stopRecording,
+    cancelRecording,
+    confirmTranscription,
+    playPreview,
+    pausePreview,
+    isPlaying,
+    duration,
+    currentTime,
+    transcript,
+    setTranscript,
+    rawTranscript,
+    skipEnhancement,
+    enhanceNow,
+    enhancementFailed,
+  } = useSpeechToText({
+    onError: useCallback((errorMsg: string) => {
+      showToast(errorMsg, 'error');
+    }, [showToast]),
+    autoEnhance: false, // Disabled - use raw transcription for note drafting
+  });
+
+  const isRecording = recordingState === 'recording';
+  const isEnhancing = recordingState === 'enhancing';
+  const isPreviewing = recordingState === 'preview' || recordingState === 'enhancing';
+
+  // Note classifier for intelligent suggestions
+  const {
+    classification,
+    suggestedTags,
+    suggestedTemplate,
+    templates,
+    applyTemplate,
+    getIcon,
+  } = useNoteClassifier(text);
+
+  // State for showing template picker
+  const [showTemplates, setShowTemplates] = useState(false);
+
+  // File upload for attachments
+  const {
+    files: attachedFiles,
+    isDragging,
+    addFiles,
+    removeFile,
+    // clearFiles - available but not currently used
+    handleDragEnter,
+    handleDragLeave,
+    handleDragOver,
+    handleDrop,
+    getAcceptString,
+  } = useFileUpload({
+    maxFileSizeMb: 10,
+    maxFiles: 5,
+    acceptedTypes: ['image', 'pdf', 'audio'],
+  });
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Handle file input change
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      addFiles(e.target.files);
+      e.target.value = ''; // Reset input
+    }
+  }, [addFiles]);
+
+  // Handle applying a template
+  const handleApplyTemplate = useCallback((templateId: string) => {
+    const structure = applyTemplate(templateId);
+    if (structure) {
+      setText(structure);
+      setShowTemplates(false);
+      textareaRef.current?.focus();
+      showToast('Template applied', 'success');
+    }
+  }, [applyTemplate, showToast]);
+
+  // Handle confirming the voice transcript
+  const handleConfirmTranscript = useCallback(() => {
+    triggerHaptic('light');
+    if (transcript.trim()) {
+      setText((prev) => {
+        const newText = prev ? `${prev} ${transcript.trim()}` : transcript.trim();
+        return newText.slice(0, NOTES.MAX_LENGTH);
+      });
+      showToast('Voice note added', 'success');
+    }
+    confirmTranscription();
+  }, [transcript, confirmTranscription, showToast]);
+
+  // Wrapper for mic button with haptic feedback
+  const handleMicClick = useCallback(() => {
+    triggerHaptic('medium');
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  }, [isRecording, startRecording, stopRecording]);
+
+  // Format duration as MM:SS
+  const formatTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Track mounted state and cleanup AbortController on unmount
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      // Abort any in-flight request on unmount
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
     };
   }, []);
 
@@ -79,7 +200,7 @@ export function NotesPanel({ className = '', highlightNoteId, onNoteHighlighted,
     }
     searchTimeoutRef.current = setTimeout(() => {
       setDebouncedSearch(searchQuery);
-    }, SEARCH_DEBOUNCE_MS);
+    }, NOTES.SEARCH_DEBOUNCE_MS);
 
     return () => {
       if (searchTimeoutRef.current) {
@@ -90,7 +211,7 @@ export function NotesPanel({ className = '', highlightNoteId, onNoteHighlighted,
 
   const trimmed = text.trim();
   const canSubmit = useMemo(
-    () => trimmed.length > 0 && trimmed.length <= MAX_NOTE_LENGTH && !saving,
+    () => trimmed.length > 0 && trimmed.length <= NOTES.MAX_LENGTH && !saving,
     [trimmed, saving]
   );
 
@@ -98,6 +219,13 @@ export function NotesPanel({ className = '', highlightNoteId, onNoteHighlighted,
     // Guard against concurrent requests using refs to avoid stale closures
     if (append && loadingMoreRef.current) return;
     if (!append && loadingRef.current) return;
+
+    // Abort any in-flight request before starting a new one
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     // Update both ref and state
     if (append) {
@@ -110,7 +238,7 @@ export function NotesPanel({ className = '', highlightNoteId, onNoteHighlighted,
     setError(null);
 
     try {
-      const response = await listNotes(loadCursor, PAGE_SIZE);
+      const response = await listNotes(loadCursor, NOTES.PAGE_SIZE, controller.signal);
 
       // Prevent state updates if component unmounted during fetch
       if (!mountedRef.current) return;
@@ -126,6 +254,11 @@ export function NotesPanel({ className = '', highlightNoteId, onNoteHighlighted,
       setCursor(response.cursor);
       setHasMore(response.hasMore);
     } catch (err) {
+      // Ignore abort errors - they're expected when cancelling
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        return;
+      }
+
       // Prevent state updates if component unmounted during fetch
       if (!mountedRef.current) return;
 
@@ -193,19 +326,21 @@ export function NotesPanel({ className = '', highlightNoteId, onNoteHighlighted,
       setPendingNotes([]);
       setNotes((prev) => [normalizedNote, ...prev]);
       showToast('Saved', 'success');
+      announce('Note saved successfully');
     } catch (err) {
       const message = err instanceof ApiRequestError
         ? err.getUserMessage()
         : err instanceof Error ? err.message : 'Failed to save note';
       setError(message);
       showToast(message, 'error');
+      announce(message, 'assertive');
       // Restore text on failure
       setText(optimisticNote.text);
       setPendingNotes([]);
     } finally {
       setSaving(false);
     }
-  }, [canSubmit, trimmed, showToast]);
+  }, [canSubmit, trimmed, showToast, announce]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -242,15 +377,17 @@ export function NotesPanel({ className = '', highlightNoteId, onNoteHighlighted,
       setNotes(prev => prev.map(n => n.id === id ? normalizedNote : n));
       setEditingNote(null);
       showToast('Note updated', 'success');
+      announce('Note updated successfully');
     } catch (err) {
       const message = err instanceof ApiRequestError
         ? err.getUserMessage()
         : err instanceof Error ? err.message : 'Failed to update note';
       showToast(message, 'error');
+      announce(message, 'assertive');
     } finally {
       setIsEditSaving(false);
     }
-  }, [showToast]);
+  }, [showToast, announce]);
 
   const handleEditClose = useCallback(() => {
     setEditingNote(null);
@@ -272,15 +409,17 @@ export function NotesPanel({ className = '', highlightNoteId, onNoteHighlighted,
       setNotes(prev => prev.filter(n => n.id !== noteId));
       setDeleteConfirmNote(null);
       showToast('Note deleted', 'success');
+      announce('Note deleted');
     } catch (err) {
       const message = err instanceof ApiRequestError
         ? err.getUserMessage()
         : err instanceof Error ? err.message : 'Failed to delete note';
       showToast(message, 'error');
+      announce(message, 'assertive');
     } finally {
       setIsDeleting(false);
     }
-  }, [deleteConfirmNote, showToast]);
+  }, [deleteConfirmNote, showToast, announce]);
 
   const handleDeleteCancel = useCallback(() => {
     setDeleteConfirmNote(null);
@@ -311,51 +450,33 @@ export function NotesPanel({ className = '', highlightNoteId, onNoteHighlighted,
     }
   }, [highlightNoteId, onNoteHighlighted]);
 
-  // Filter notes client-side
+  // Filter notes by search query
   const filteredNotes = useMemo(() => {
     const allNotes = [...pendingNotes, ...notes];
 
-    let result = allNotes;
-
-    // Apply time filter
-    if (activeFilter !== 'all') {
-      const now = new Date();
-      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const startOfWeek = new Date(startOfDay);
-      startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
-
-      result = result.filter(note => {
-        if (!note.createdAt) return false;
-        if (activeFilter === 'today') {
-          return note.createdAt >= startOfDay;
-        }
-        if (activeFilter === 'week') {
-          return note.createdAt >= startOfWeek;
-        }
-        return true;
-      });
+    if (!debouncedSearch) {
+      return allNotes;
     }
 
-    // Apply search filter
-    if (debouncedSearch) {
-      const query = debouncedSearch.toLowerCase();
-      result = result.filter(note =>
-        note.text.toLowerCase().includes(query)
-      );
-    }
+    const query = debouncedSearch.toLowerCase();
+    return allNotes.filter(note =>
+      note.text.toLowerCase().includes(query)
+    );
+  }, [pendingNotes, notes, debouncedSearch]);
 
-    return result;
-  }, [pendingNotes, notes, activeFilter, debouncedSearch]);
+  // Group notes by date (Apple Notes style)
+  const groupedNotes = useMemo(() => {
+    return groupNotesByDate(filteredNotes);
+  }, [filteredNotes]);
 
   const totalLoaded = notes.length;
-  const isFiltered = activeFilter !== 'all' || debouncedSearch.length > 0;
+  const isFiltered = debouncedSearch.length > 0;
 
   return (
     <div className={`panel ${className}`}>
       <div className="panel-header">
         <h2>
-          <FileText size={16} />
-          Your Notes
+          <img src="/favicon.svg" alt="NotesGPT" className="panel-header-logo" />
         </h2>
         <div className="text-muted text-xs">
           {loading ? (
@@ -372,8 +493,143 @@ export function NotesPanel({ className = '', highlightNoteId, onNoteHighlighted,
 
       <div className="panel-body">
         {/* Floating Composer */}
-        <div className={`composer ${composerFocused || text ? 'composer-expanded' : ''}`}>
-          <div className="composer-wrapper">
+        <div className={`composer ${composerFocused || text || isPreviewing ? 'composer-expanded' : ''}`}>
+          {/* Audio Preview Bar with Editable Transcript */}
+          {isPreviewing && (
+            <div className="audio-preview-container">
+              {/* Playback controls */}
+              <div className="audio-preview-bar">
+                <button
+                  className="audio-preview-play-btn"
+                  onClick={isPlaying ? pausePreview : playPreview}
+                  aria-label={isPlaying ? 'Pause preview' : 'Play preview'}
+                  type="button"
+                >
+                  {isPlaying ? <Pause size={18} /> : <Play size={18} />}
+                </button>
+                <div
+                  className="audio-preview-progress"
+                  role="progressbar"
+                  aria-label="Audio playback progress"
+                  aria-valuenow={Math.round(currentTime)}
+                  aria-valuemin={0}
+                  aria-valuemax={Math.round(duration)}
+                  aria-valuetext={`${formatTime(currentTime)} of ${formatTime(duration)}`}
+                >
+                  <div
+                    className="audio-preview-progress-bar"
+                    style={{ width: duration > 0 ? `${(currentTime / duration) * 100}%` : '0%' }}
+                  />
+                </div>
+                <span className="audio-preview-time" aria-hidden="true">
+                  {formatTime(currentTime)} / {formatTime(duration)}
+                </span>
+              </div>
+
+              {/* Editable transcript with enhancement status */}
+              <div className="audio-preview-transcript">
+                {isEnhancing && (
+                  <div className="enhancement-status">
+                    <span className="enhancement-badge">
+                      <Sparkles size={12} />
+                      AI enhancing...
+                    </span>
+                    <button
+                      className="enhancement-skip-btn"
+                      onClick={skipEnhancement}
+                      type="button"
+                    >
+                      Use original
+                    </button>
+                  </div>
+                )}
+                <textarea
+                  className={`audio-preview-transcript-input ${isEnhancing ? 'enhancing' : ''}`}
+                  value={transcript}
+                  onChange={(e) => setTranscript(e.target.value)}
+                  placeholder={isEnhancing ? 'Enhancing with AI...' : 'Transcript will appear here...'}
+                  aria-label="Edit transcript"
+                  disabled={isEnhancing}
+                />
+                {rawTranscript && !isEnhancing && transcript !== rawTranscript && (
+                  <div className="enhancement-comparison">
+                    <button
+                      className="enhancement-toggle-btn"
+                      onClick={() => setTranscript(rawTranscript)}
+                      type="button"
+                    >
+                      Show original
+                    </button>
+                  </div>
+                )}
+                {/* Enhancement failed notice with retry */}
+                {enhancementFailed && !isEnhancing && (
+                  <div className="enhancement-failed-notice">
+                    <AlertTriangle size={14} />
+                    <span>AI enhancement failed. Using original transcript.</span>
+                    <button
+                      className="btn"
+                      onClick={enhanceNow}
+                      type="button"
+                    >
+                      <RotateCcw size={12} />
+                      Retry
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Action buttons */}
+              <div className="audio-preview-footer">
+                <span className="audio-preview-hint">
+                  {isEnhancing ? 'AI is cleaning up your transcript...' : 'Edit the transcript above, then confirm or discard'}
+                </span>
+                <div className="audio-preview-actions">
+                  <button
+                    className="audio-preview-cancel-btn"
+                    onClick={cancelRecording}
+                    aria-label="Discard recording"
+                    title="Discard"
+                    type="button"
+                  >
+                    <X size={16} />
+                    <span>Discard</span>
+                  </button>
+                  <button
+                    className="audio-preview-confirm-btn"
+                    onClick={handleConfirmTranscript}
+                    disabled={!transcript.trim()}
+                    aria-label="Add to note"
+                    title="Add to note"
+                    type="button"
+                  >
+                    <Check size={16} />
+                    <span>Add to note</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Show live transcript while recording */}
+          {isRecording && transcript && (
+            <div className="recording-transcript">
+              <span className="recording-transcript-label">Listening...</span>
+              <p className="recording-transcript-text">{transcript}</p>
+            </div>
+          )}
+
+          <div
+            className={`composer-wrapper ${isDragging ? 'dragging' : ''}`}
+            style={{ display: isPreviewing ? 'none' : undefined }}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+          >
+            <span id="composer-hint" className="sr-only">
+              Press Cmd+Enter or Ctrl+Enter to save
+            </span>
             <textarea
               ref={textareaRef}
               className="composer-input"
@@ -382,32 +638,136 @@ export function NotesPanel({ className = '', highlightNoteId, onNoteHighlighted,
               onKeyDown={handleKeyDown}
               onFocus={() => setComposerFocused(true)}
               onBlur={() => setComposerFocused(false)}
-              placeholder="Capture a thought..."
+              placeholder={isDragging ? 'Drop files here...' : 'Capture a thought...'}
               aria-label="Write a note"
-              disabled={saving}
+              aria-describedby="composer-hint"
+              disabled={saving || isRecording}
             />
-            <button
-              className="composer-send-btn"
-              onClick={handleCreate}
-              disabled={!canSubmit}
-              aria-label="Save note"
-              title="Save note"
-            >
-              {saving ? (
-                <span className="spinner" />
-              ) : (
-                <ArrowUp size={18} />
+            {/* File attachments preview */}
+            {attachedFiles.length > 0 && (
+              <FileAttachmentList files={attachedFiles} onRemove={removeFile} compact />
+            )}
+            <div className="composer-actions">
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept={getAcceptString()}
+                onChange={handleFileSelect}
+                style={{ display: 'none' }}
+                aria-hidden="true"
+              />
+              <button
+                className="composer-attach-btn"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={saving || isRecording}
+                aria-label="Attach file"
+                title="Attach file (images, PDFs, audio)"
+                type="button"
+              >
+                <Paperclip size={18} />
+              </button>
+              <button
+                className="composer-template-btn"
+                onClick={() => setShowTemplates(!showTemplates)}
+                disabled={saving || isRecording}
+                aria-label="Choose template"
+                title="Choose template"
+                type="button"
+              >
+                <FileText size={18} />
+              </button>
+              {isSpeechSupported && (
+                <button
+                  className={`composer-mic-btn ${isRecording ? 'recording' : ''}`}
+                  onClick={handleMicClick}
+                  disabled={saving}
+                  aria-label={isRecording ? 'Stop recording' : 'Start voice input'}
+                  title={isRecording ? 'Stop recording' : 'Voice input'}
+                  type="button"
+                >
+                  <Mic size={18} />
+                </button>
               )}
-            </button>
+              <button
+                className="composer-send-btn"
+                onClick={handleCreate}
+                disabled={!canSubmit || isRecording}
+                aria-label="Save note"
+                title="Save note"
+              >
+                {saving ? (
+                  <span className="spinner" />
+                ) : (
+                  <ArrowUp size={18} />
+                )}
+              </button>
+            </div>
           </div>
+          {/* Character count and classification hints */}
           {trimmed.length > 0 && (
-            <div className="composer-char-count">
-              {trimmed.length.toLocaleString()} / {MAX_NOTE_LENGTH.toLocaleString()}
+            <div className="composer-footer">
+              <div className="composer-char-count">
+                {trimmed.length.toLocaleString()} / {NOTES.MAX_LENGTH.toLocaleString()}
+              </div>
+              {classification && classification.type !== 'general' && classification.confidence > 0.3 && (
+                <div className="composer-classification" title={`Detected as ${classification.type} note`}>
+                  <span className="classification-icon">{getIcon(classification.type)}</span>
+                </div>
+              )}
+            </div>
+          )}
+          {/* Suggested tags */}
+          {suggestedTags.length > 0 && composerFocused && (
+            <div className="composer-suggestions">
+              <Tag size={12} />
+              <span className="suggestion-label">Tags:</span>
+              {suggestedTags.map(tag => (
+                <span key={tag} className="suggested-tag">#{tag}</span>
+              ))}
             </div>
           )}
         </div>
 
-        {/* Search and Filters */}
+        {/* Template Picker */}
+        {showTemplates && (
+          <div className="template-picker">
+            <div className="template-picker-header">
+              <span>Choose a template</span>
+              <button onClick={() => setShowTemplates(false)} className="template-close" aria-label="Close templates">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="template-list">
+              {templates.map(template => (
+                <button
+                  key={template.id}
+                  className="template-item"
+                  onClick={() => handleApplyTemplate(template.id)}
+                >
+                  <span className="template-icon">{template.icon}</span>
+                  <div className="template-info">
+                    <span className="template-name">{template.name}</span>
+                    <span className="template-desc">{template.description}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Template suggestion */}
+        {suggestedTemplate && !showTemplates && trimmed.length < 50 && composerFocused && (
+          <div className="template-suggestion">
+            <FileText size={14} />
+            <span>Try the <button className="template-link" onClick={() => handleApplyTemplate(suggestedTemplate.id)}>
+              {suggestedTemplate.icon} {suggestedTemplate.name}
+            </button> template</span>
+          </div>
+        )}
+
+        {/* Search */}
         <div className="notes-toolbar">
           <div className="search-box">
             <Search size={16} />
@@ -429,61 +789,60 @@ export function NotesPanel({ className = '', highlightNoteId, onNoteHighlighted,
               </button>
             )}
           </div>
-          <div className="filter-tabs">
-            {(['all', 'today', 'week'] as FilterType[]).map((filter) => (
-              <button
-                key={filter}
-                className={`filter-tab ${activeFilter === filter ? 'active' : ''}`}
-                onClick={() => setActiveFilter(filter)}
-              >
-                {filter === 'all' ? 'All' : filter === 'today' ? 'Today' : 'Week'}
-              </button>
-            ))}
-          </div>
         </div>
 
         {error && <div className="error-inline">{error}</div>}
 
         {/* Scrollable Notes List with Infinite Scroll */}
         <div className="notes-scroll" ref={scrollRef}>
-          <div className="notes-list" role="list" aria-label="Notes list">
-            {loading && notes.length === 0 ? (
+          {loading && notes.length === 0 ? (
+            <div className="notes-list" role="list" aria-label="Notes list">
               <NoteCardSkeleton count={3} />
-            ) : filteredNotes.length === 0 ? (
-              <EmptyState type={isFiltered ? 'no-search-results' : 'no-notes'} />
-            ) : (
-              <>
-                {filteredNotes.map((note) => (
-                  <div
-                    key={note.id}
-                    ref={note.id === highlightNoteId ? highlightRef : null}
-                  >
-                    <NoteCard
-                      note={note}
-                      isPending={note.id.startsWith('temp-')}
-                      isHighlighted={note.id === highlightNoteId}
-                      searchQuery={debouncedSearch}
-                      onEdit={handleEdit}
-                      onDelete={handleDeleteClick}
-                    />
+            </div>
+          ) : filteredNotes.length === 0 ? (
+            <EmptyState type={isFiltered ? 'no-search-results' : 'no-notes'} />
+          ) : (
+            <>
+              {groupedNotes.map(({ group, notes: groupNotes }) => (
+                <div key={group} className="notes-group">
+                  <div className="notes-group-header">
+                    <span className="notes-group-title">{group}</span>
                   </div>
-                ))}
-                {!isFiltered && loadingMore && (
-                  <div className="loading-more">
-                    <span className="spinner" /> Loading more...
+                  <div className="notes-list" role="list" aria-label={`${group} notes`}>
+                    {groupNotes.map((note) => (
+                      <div
+                        key={note.id}
+                        ref={note.id === highlightNoteId ? highlightRef : null}
+                        role="listitem"
+                      >
+                        <NoteCard
+                          note={note}
+                          isPending={note.id.startsWith('temp-')}
+                          isHighlighted={note.id === highlightNoteId}
+                          searchQuery={debouncedSearch}
+                          onEdit={handleEdit}
+                          onDelete={handleDeleteClick}
+                        />
+                      </div>
+                    ))}
                   </div>
-                )}
-                {!isFiltered && hasMore && !loadingMore && (
-                  <button
-                    className="btn load-more-btn"
-                    onClick={loadMore}
-                  >
-                    Load more notes
-                  </button>
-                )}
-              </>
-            )}
-          </div>
+                </div>
+              ))}
+              {!isFiltered && loadingMore && (
+                <div className="loading-more">
+                  <span className="spinner" /> Loading more...
+                </div>
+              )}
+              {!isFiltered && hasMore && !loadingMore && (
+                <button
+                  className="btn load-more-btn"
+                  onClick={loadMore}
+                >
+                  Load more notes
+                </button>
+              )}
+            </>
+          )}
         </div>
       </div>
 

@@ -3,7 +3,7 @@
  * Also handles connecting the auth token getter to the API client
  */
 
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '../../auth/useAuth';
 import { setTokenGetter } from '../../lib/api';
@@ -15,10 +15,22 @@ interface AuthenticatedAppProps {
 
 export function AuthenticatedApp({ children }: AuthenticatedAppProps) {
   const { user, loading, getToken } = useAuth();
+  const tokenGetterSet = useRef(false);
 
-  // Connect auth token getter to API client
+  // Connect auth token getter to API client synchronously before children render
+  // useLayoutEffect runs synchronously after DOM mutations but before paint
+  useLayoutEffect(() => {
+    if (!tokenGetterSet.current && getToken) {
+      setTokenGetter(getToken);
+      tokenGetterSet.current = true;
+    }
+  }, [getToken]);
+
+  // Update token getter if getToken changes
   useEffect(() => {
-    setTokenGetter(getToken);
+    if (getToken) {
+      setTokenGetter(getToken);
+    }
   }, [getToken]);
 
   // Show loading spinner while checking auth state
