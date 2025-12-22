@@ -189,12 +189,9 @@ export function AppShell() {
       <div className="app-container">
         {/* Header */}
         <header className="app-header">
-          {/* Left: Logo and Title */}
+          {/* Left: App Icon */}
           <div className="app-title">
-            <div className="app-logo" aria-hidden="true">
-              <Sparkles size={18} />
-            </div>
-            <h1>NotesGPT</h1>
+            <img src="/favicon.svg" alt="NotesGPT" className="app-icon" />
           </div>
 
           {/* Center: Tab Toggle - Segmented Control with sliding indicator */}
@@ -227,15 +224,6 @@ export function AppShell() {
 
           {/* Right: Actions */}
           <div className="header-actions">
-            {/* Search/Command Palette Button */}
-            <button
-              className="header-search-btn"
-              onClick={commandPalette.open}
-              aria-label="Search notes (⌘K)"
-              title="Search notes (⌘K)"
-            >
-              <Search size={18} />
-            </button>
             <div className="profile-menu-container">
               <button
                 ref={profileAvatarRef}

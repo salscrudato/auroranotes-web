@@ -14,8 +14,6 @@ import {
   Clock,
   Sparkles,
   Mic,
-  BookOpen,
-  Trash2,
 } from 'lucide-react';
 import type { ChatMessage as ChatMessageType, Source, FeedbackRating, QueryIntent } from '../../lib/types';
 import { useChat } from '../../hooks/useChat';
@@ -185,9 +183,6 @@ export function ChatPanel({ className = '', onOpenNote }: ChatPanelProps) {
     setActiveSources(allSources);
   }, [messages]);
 
-  // Derived state for whether we have sources to display
-  const hasSources = activeSources.length > 0;
-
   // Generate follow-up suggestions based on the last assistant message
   const followUpSuggestions = useMemo(() => {
     const lastAssistantMessage = [...messages].reverse().find(m => m.role === 'assistant' && !m.isError && !m.isStreaming);
@@ -302,34 +297,6 @@ export function ChatPanel({ className = '', onOpenNote }: ChatPanelProps) {
 
   return (
     <div className={`panel panel-chat ${className}`}>
-      <div className="panel-header">
-        <h2>
-          <img src="/favicon.svg" alt="NotesGPT" className="panel-header-logo" />
-        </h2>
-        <div className="header-actions-row">
-          {hasSources && (
-            <button
-              className={`btn btn-sm ${showSources ? 'btn-ai' : 'btn-ghost'}`}
-              onClick={() => setShowSources(!showSources)}
-              aria-label={showSources ? 'Hide sources' : 'Show sources'}
-            >
-              <BookOpen size={14} />
-              {activeSources.length} sources
-            </button>
-          )}
-          {messages.length > 0 && (
-            <button
-              className="btn btn-sm btn-ghost"
-              onClick={handleClearChat}
-              aria-label="Clear chat"
-              title="Clear chat history"
-            >
-              <Trash2 size={14} />
-            </button>
-          )}
-        </div>
-      </div>
-
       <div className="panel-body chat-panel-body">
         <div className="chat-container">
           {/* Suggestion Chips */}
@@ -400,6 +367,17 @@ export function ChatPanel({ className = '', onOpenNote }: ChatPanelProps) {
               })
             )}
             {loadingState === 'sending' && <ChatMessageLoading />}
+            {messages.length > 0 && !isLoading && (
+              <div className="chat-clear-container">
+                <button
+                  className="chat-clear-btn"
+                  onClick={handleClearChat}
+                  aria-label="Clear chat"
+                >
+                  Clear
+                </button>
+              </div>
+            )}
             <div ref={messagesEndRef} />
           </div>
 

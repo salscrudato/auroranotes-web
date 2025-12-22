@@ -450,7 +450,7 @@ export function NotesPanel({ className = '', highlightNoteId, onNoteHighlighted,
     }
   }, [highlightNoteId, onNoteHighlighted]);
 
-  // Filter notes by search query
+  // Intelligent search: splits query into terms, matches all terms, ranks by relevance
   const filteredNotes = useMemo(() => {
     const allNotes = [...pendingNotes, ...notes];
 
@@ -458,10 +458,47 @@ export function NotesPanel({ className = '', highlightNoteId, onNoteHighlighted,
       return allNotes;
     }
 
-    const query = debouncedSearch.toLowerCase();
-    return allNotes.filter(note =>
-      note.text.toLowerCase().includes(query)
-    );
+    const queryTerms = debouncedSearch.toLowerCase().split(/\s+/).filter(t => t.length > 0);
+    if (queryTerms.length === 0) {
+      return allNotes;
+    }
+
+    // Score and filter notes
+    const scored = allNotes.map(note => {
+      const textLower = note.text.toLowerCase();
+      let score = 0;
+      let allTermsMatch = true;
+
+      for (const term of queryTerms) {
+        if (!textLower.includes(term)) {
+          allTermsMatch = false;
+          break;
+        }
+        // Exact word match scores higher
+        const wordBoundaryRegex = new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+        if (wordBoundaryRegex.test(note.text)) {
+          score += 10;
+        } else {
+          score += 1; // Partial match
+        }
+        // Multiple occurrences boost score
+        const occurrences = (textLower.match(new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
+        score += Math.min(occurrences - 1, 3); // Cap bonus at 3
+      }
+
+      // Boost if query appears as exact phrase
+      if (textLower.includes(debouncedSearch.toLowerCase())) {
+        score += 20;
+      }
+
+      return { note, score, matches: allTermsMatch };
+    });
+
+    // Filter to notes that match all terms, then sort by score descending
+    return scored
+      .filter(s => s.matches)
+      .sort((a, b) => b.score - a.score)
+      .map(s => s.note);
   }, [pendingNotes, notes, debouncedSearch]);
 
   // Group notes by date (Apple Notes style)
@@ -469,28 +506,10 @@ export function NotesPanel({ className = '', highlightNoteId, onNoteHighlighted,
     return groupNotesByDate(filteredNotes);
   }, [filteredNotes]);
 
-  const totalLoaded = notes.length;
   const isFiltered = debouncedSearch.length > 0;
 
   return (
     <div className={`panel ${className}`}>
-      <div className="panel-header">
-        <h2>
-          <img src="/favicon.svg" alt="NotesGPT" className="panel-header-logo" />
-        </h2>
-        <div className="text-muted text-xs">
-          {loading ? (
-            <span className="spinner" />
-          ) : isFiltered ? (
-            <>{filteredNotes.length} found</>
-          ) : (
-            <>
-              {totalLoaded.toLocaleString()}{hasMore && '+'} notes
-            </>
-          )}
-        </div>
-      </div>
-
       <div className="panel-body">
         {/* Floating Composer */}
         <div className={`composer ${composerFocused || text || isPreviewing ? 'composer-expanded' : ''}`}>
