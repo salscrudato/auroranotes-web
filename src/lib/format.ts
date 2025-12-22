@@ -88,13 +88,7 @@ export function normalizeNote(raw: RawNote): Note {
   };
 }
 
-/**
- * Truncate text to specified length with ellipsis
- */
-export function truncateText(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text;
-  return text.slice(0, maxLength).trim() + '…';
-}
+
 
 /**
  * Get short ID for display (first 8 chars)
@@ -106,9 +100,9 @@ export function shortId(id: string): string {
 
 /**
  * Get date group label for a date (Today, Yesterday, This Week, etc)
- * Used for grouping notes in Apple Notes style
+ * Used internally for grouping notes in Apple Notes style
  */
-export function getDateGroup(d: Date | null): string {
+function getDateGroup(d: Date | null): string {
   if (!d) return 'Unknown';
 
   const now = new Date();

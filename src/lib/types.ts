@@ -151,17 +151,7 @@ export interface Citation {
   score: number;
 }
 
-/** @deprecated Use ChatMeta instead */
-export interface RetrievalMeta {
-  model: string;
-  retrieval: {
-    k: number;
-    strategy: string;
-    candidateCount?: number;
-    rerankCount?: number;
-    timeMs?: number;
-  };
-}
+
 
 /** Chat message for UI state */
 export interface ChatMessage {

@@ -94,9 +94,6 @@ export const LandingPage = memo(function LandingPage() {
     <div className="landing-page">
       {/* Aurora Ambient Background */}
       <div className="landing-ambient" aria-hidden="true">
-        <div className="landing-gradient-1" />
-        <div className="landing-gradient-2" />
-        <div className="landing-gradient-3" />
         <div className="landing-grid-overlay" />
       </div>
 

@@ -71,10 +71,6 @@ export const STORAGE_KEYS = {
 // ===========================================
 
 export const FEATURES = {
-  ENABLE_MARKDOWN: true,
-  ENABLE_CHAT_PERSISTENCE: true,
-  ENABLE_NOTE_EDITING: true,
-  ENABLE_NOTE_DELETION: true,
   ENABLE_OFFLINE_BANNER: true,
 } as const;
 

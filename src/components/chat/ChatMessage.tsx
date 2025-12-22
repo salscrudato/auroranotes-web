@@ -349,27 +349,5 @@ export function ChatMessageLoading() {
   );
 }
 
-/**
- * Error state message with retry option
- */
-interface ChatMessageErrorProps {
-  error: string;
-  onRetry?: () => void;
-}
 
-export function ChatMessageError({ error, onRetry }: ChatMessageErrorProps) {
-  return (
-    <div className="chat-message assistant">
-      <div className="chat-bubble chat-bubble-error">
-        <AlertCircle size={14} />
-        <span>{error || 'Something went wrong. Please try again.'}</span>
-        {onRetry && (
-          <button className="btn btn-sm btn-ghost" onClick={onRetry}>
-            Retry
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
 

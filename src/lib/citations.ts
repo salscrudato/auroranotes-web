@@ -116,13 +116,7 @@ export function getReferencedSources(
   return referenced;
 }
 
-/**
- * Check if text contains any source tokens [1], [2], etc.
- */
-export function hasSources(text: string): boolean {
-  SOURCE_PATTERN.lastIndex = 0;
-  return SOURCE_PATTERN.test(text);
-}
+
 
 /**
  * Format source preview for display (truncate if needed)

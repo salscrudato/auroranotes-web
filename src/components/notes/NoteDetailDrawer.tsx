@@ -7,7 +7,7 @@ import { useEffect, useCallback } from 'react';
 import { FileText, X, Copy } from 'lucide-react';
 import type { Note } from '../../lib/types';
 import { formatFullTimestamp, formatRelativeTime, shortId } from '../../lib/format';
-import { escapeRegex, copyToClipboard } from '../../lib/utils';
+import { splitTextForHighlight, copyToClipboard } from '../../lib/utils';
 import { useToast } from '../common/useToast';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 
@@ -56,19 +56,14 @@ export function NoteDetailDrawer({ note, onClose, highlightText }: NoteDetailDra
 
   // Highlight matching text if provided
   const renderText = () => {
-    if (!highlightText || !note.text.toLowerCase().includes(highlightText.toLowerCase())) {
-      return <p className="note-detail-text">{note.text}</p>;
-    }
-
-    // Simple case-insensitive highlight
-    const parts = note.text.split(new RegExp(`(${escapeRegex(highlightText)})`, 'gi'));
+    const parts = splitTextForHighlight(note.text, highlightText || '');
     return (
       <p className="note-detail-text">
-        {parts.map((part, i) => 
-          part.toLowerCase() === highlightText.toLowerCase() ? (
-            <mark key={i} className="highlight">{part}</mark>
+        {parts.map((part, i) =>
+          part.isMatch ? (
+            <mark key={i} className="highlight">{part.text}</mark>
           ) : (
-            part
+            part.text
           )
         )}
       </p>

@@ -7,8 +7,29 @@
  * Escape special regex characters in a string
  * Used for safe string matching in search/highlight features
  */
-export function escapeRegex(str: string): string {
+function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Split text into parts for highlighting search matches
+ * Returns an array of { text, isMatch } objects for rendering
+ */
+export function splitTextForHighlight(
+  text: string,
+  query: string
+): { text: string; isMatch: boolean }[] {
+  if (!query || !text.toLowerCase().includes(query.toLowerCase())) {
+    return [{ text, isMatch: false }];
+  }
+
+  const parts = text.split(new RegExp(`(${escapeRegex(query)})`, 'gi'));
+  return parts
+    .filter(part => part.length > 0)
+    .map(part => ({
+      text: part,
+      isMatch: part.toLowerCase() === query.toLowerCase(),
+    }));
 }
 
 /**

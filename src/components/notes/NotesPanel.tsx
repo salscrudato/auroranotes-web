@@ -5,7 +5,7 @@
  */
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Search, ArrowUp, Mic, Play, Pause, Check, X, Sparkles, AlertTriangle, RotateCcw, Tag, FileText, Paperclip } from 'lucide-react';
+import { Search, ArrowUp, Mic, Play, Pause, Check, X, Sparkles, AlertTriangle, RotateCcw, Tag, FileText } from 'lucide-react';
 import type { Note } from '../../lib/types';
 import { normalizeNote, groupNotesByDate } from '../../lib/format';
 import { triggerHaptic } from '../../lib/utils';
@@ -15,13 +15,11 @@ import { useToast } from '../common/useToast';
 import { useAnnounce } from '../common/LiveRegion';
 import { useSpeechToText } from '../../hooks/useSpeechToText';
 import { useNoteClassifier } from '../../hooks/useNoteClassifier';
-import { useFileUpload } from '../../hooks/useFileUpload';
 import { NoteCard } from './NoteCard';
 import { NoteCardSkeleton } from './NoteCardSkeleton';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { EditNoteModal } from './EditNoteModal';
 import { EmptyState } from '../common/EmptyState';
-import { FileAttachmentList } from './FileAttachment';
 
 interface NotesPanelProps {
   className?: string;
@@ -110,34 +108,6 @@ export function NotesPanel({ className = '', highlightNoteId, onNoteHighlighted,
 
   // State for showing template picker
   const [showTemplates, setShowTemplates] = useState(false);
-
-  // File upload for attachments
-  const {
-    files: attachedFiles,
-    isDragging,
-    addFiles,
-    removeFile,
-    // clearFiles - available but not currently used
-    handleDragEnter,
-    handleDragLeave,
-    handleDragOver,
-    handleDrop,
-    getAcceptString,
-  } = useFileUpload({
-    maxFileSizeMb: 10,
-    maxFiles: 5,
-    acceptedTypes: ['image', 'pdf', 'audio'],
-  });
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Handle file input change
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      addFiles(e.target.files);
-      e.target.value = ''; // Reset input
-    }
-  }, [addFiles]);
 
   // Handle applying a template
   const handleApplyTemplate = useCallback((templateId: string) => {
@@ -639,12 +609,8 @@ export function NotesPanel({ className = '', highlightNoteId, onNoteHighlighted,
           )}
 
           <div
-            className={`composer-wrapper ${isDragging ? 'dragging' : ''}`}
+            className="composer-wrapper"
             style={{ display: isPreviewing ? 'none' : undefined }}
-            onDragEnter={handleDragEnter}
-            onDragLeave={handleDragLeave}
-            onDragOver={handleDragOver}
-            onDrop={handleDrop}
           >
             <span id="composer-hint" className="sr-only">
               Press Cmd+Enter or Ctrl+Enter to save
@@ -657,36 +623,12 @@ export function NotesPanel({ className = '', highlightNoteId, onNoteHighlighted,
               onKeyDown={handleKeyDown}
               onFocus={() => setComposerFocused(true)}
               onBlur={() => setComposerFocused(false)}
-              placeholder={isDragging ? 'Drop files here...' : 'Capture a thought...'}
+              placeholder="Capture a thought..."
               aria-label="Write a note"
               aria-describedby="composer-hint"
               disabled={saving || isRecording}
             />
-            {/* File attachments preview */}
-            {attachedFiles.length > 0 && (
-              <FileAttachmentList files={attachedFiles} onRemove={removeFile} compact />
-            )}
             <div className="composer-actions">
-              {/* Hidden file input */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept={getAcceptString()}
-                onChange={handleFileSelect}
-                style={{ display: 'none' }}
-                aria-hidden="true"
-              />
-              <button
-                className="composer-attach-btn"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={saving || isRecording}
-                aria-label="Attach file"
-                title="Attach file (images, PDFs, audio)"
-                type="button"
-              >
-                <Paperclip size={18} />
-              </button>
               <button
                 className="composer-template-btn"
                 onClick={() => setShowTemplates(!showTemplates)}

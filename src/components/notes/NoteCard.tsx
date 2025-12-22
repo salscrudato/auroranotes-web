@@ -8,7 +8,7 @@ import { useState, useCallback, useEffect, memo } from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
 import type { Note } from '../../lib/types';
 import { formatRelativeTime, formatFullTimestamp } from '../../lib/format';
-import { escapeRegex, cn, copyToClipboard, triggerHaptic } from '../../lib/utils';
+import { splitTextForHighlight, cn, copyToClipboard, triggerHaptic } from '../../lib/utils';
 import { useToast } from '../common/useToast';
 import { NOTES } from '../../lib/constants';
 import { useTouchGestures } from '../../hooks/useTouchGestures';
@@ -108,19 +108,17 @@ export const NoteCard = memo(function NoteCard({
 
   // Render text with optional search highlighting
   const renderText = () => {
-    if (!searchQuery || !note.text.toLowerCase().includes(searchQuery.toLowerCase())) {
+    const parts = splitTextForHighlight(note.text, searchQuery);
+    if (parts.length === 1 && !parts[0].isMatch) {
       return note.text;
     }
-
-    // Simple case-insensitive highlight
-    const parts = note.text.split(new RegExp(`(${escapeRegex(searchQuery)})`, 'gi'));
     return (
       <>
         {parts.map((part, i) =>
-          part.toLowerCase() === searchQuery.toLowerCase() ? (
-            <mark key={i} className="search-highlight">{part}</mark>
+          part.isMatch ? (
+            <mark key={i} className="search-highlight">{part.text}</mark>
           ) : (
-            part
+            part.text
           )
         )}
       </>
