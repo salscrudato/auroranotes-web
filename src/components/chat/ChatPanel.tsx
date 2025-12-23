@@ -84,6 +84,7 @@ export function ChatPanel({ className = '', onOpenNote }: ChatPanelProps) {
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { showToast } = useToast();
@@ -157,7 +158,10 @@ export function ChatPanel({ className = '', onOpenNote }: ChatPanelProps) {
   }, []);
 
   const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messagesContainerRef.current) {
+      // Scroll the messages container to the bottom
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
   }, []);
 
   useEffect(() => {
@@ -318,6 +322,7 @@ export function ChatPanel({ className = '', onOpenNote }: ChatPanelProps) {
 
           {/* Messages Area */}
           <div
+            ref={messagesContainerRef}
             className="chat-messages"
             role="log"
             aria-live="polite"

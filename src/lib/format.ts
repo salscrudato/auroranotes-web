@@ -136,12 +136,18 @@ function getDateGroup(d: Date | null): string {
   });
 }
 
+/** Type for grouped notes */
+export interface DateGroup<T> {
+  group: string;
+  notes: T[];
+}
+
 /**
  * Group notes by date category
  */
 export function groupNotesByDate<T extends { createdAt: Date | null }>(
   notes: T[]
-): { group: string; notes: T[] }[] {
+): DateGroup<T>[] {
   const groups = new Map<string, T[]>();
 
   for (const note of notes) {

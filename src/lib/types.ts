@@ -76,6 +76,12 @@ export interface Source {
   preview: string;   // ~120 char preview of the source
   date: string;      // Human-readable: "Dec 15, 2024"
   relevance: number; // 0-1 confidence score
+  /** Start character offset in original note (for highlighting) */
+  startOffset?: number;
+  /** End character offset in original note (for highlighting) */
+  endOffset?: number;
+  /** Anchor text for deep-linking (first ~50 chars of chunk) */
+  anchor?: string;
 }
 
 /** Query intent classification - matches backend QueryIntent */
@@ -160,7 +166,7 @@ export interface ChatMessage {
   content: string;
   timestamp: Date;
   sources?: Source[];
-  contextSources?: Source[]; // All relevant sources used as context (may not be cited)
+  contextSources?: ContextSource[]; // All relevant sources used as context (may not be cited)
   meta?: ChatMeta;
   action?: ActionMeta;  // Present when this message was an agentic action response
   isError?: boolean;
@@ -170,23 +176,43 @@ export interface ChatMessage {
   citations?: Citation[];
 }
 
+/** Conversation containing multiple chat messages */
+export interface Conversation {
+  id: string;
+  title?: string;
+  messages: ChatMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ============================================
 // Streaming Types
 // ============================================
 
 /** Stream event types from SSE */
-export type StreamEventType = 'sources' | 'token' | 'done' | 'error';
+export type StreamEventType = 'sources' | 'token' | 'done' | 'error' | 'heartbeat' | 'followups' | 'context_sources';
 
 /** Source event in streaming (without relevance) */
 export type StreamSource = Omit<Source, 'relevance'>;
+
+/** Context source - retrieved but not cited */
+export interface ContextSource {
+  noteId: string;
+  preview: string;
+  date: string;
+  relevance: number;
+}
 
 /** Stream event from SSE */
 export interface StreamEvent {
   type: StreamEventType;
   content?: string;              // For 'token' events
   sources?: StreamSource[];      // For 'sources' event
+  contextSources?: ContextSource[]; // For 'context_sources' event
+  followups?: string[];          // For 'followups' event
   meta?: ChatMeta;               // For 'done' event
   error?: string;                // For 'error' event
+  seq?: number;                  // For 'heartbeat' events
 }
 
 // ============================================
@@ -248,5 +274,162 @@ export interface TranscriptionResponse {
   processingTimeMs: number;
   model: string;
   estimatedDurationSeconds?: number;
+}
+
+// ============================================
+// Thread Types (Chat Persistence)
+// ============================================
+
+/** Thread summary for list view */
+export interface Thread {
+  id: string;
+  title: string;
+  createdAt: string;          // ISO 8601
+  updatedAt: string;          // ISO 8601
+  messageCount: number;
+  lastMessage?: string;       // Preview of last message
+}
+
+/** Thread detail with messages */
+export interface ThreadDetail extends Thread {
+  messages: ThreadMessage[];
+}
+
+/** Message stored in a thread */
+export interface ThreadMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;          // ISO 8601
+  sources?: Source[];
+  contextSources?: Source[];
+  meta?: ChatMeta;
+  action?: ActionMeta;
+  isError?: boolean;
+}
+
+/** Request to create a thread */
+export interface CreateThreadRequest {
+  title?: string;
+  message?: string;           // Initial message to send
+}
+
+/** Request to send a message to a thread */
+export interface SendThreadMessageRequest {
+  message: string;
+  stream?: boolean;
+}
+
+// ============================================
+// Chat Context/Filters Types
+// ============================================
+
+/** Filter mode for chat context */
+export type ChatFilterMode = 'all' | 'selected' | 'tags' | 'date' | 'note';
+
+/** Filters for chat context */
+export interface ChatFilters {
+  mode: ChatFilterMode;
+  noteIds?: string[];          // For 'selected' or 'note' mode
+  tags?: string[];             // For 'tags' mode
+  dateRange?: {
+    start?: string;            // ISO 8601
+    end?: string;              // ISO 8601
+  };
+}
+
+// ============================================
+// Enhanced Note Types
+// ============================================
+
+/** Note metadata for classification */
+export interface NoteMetadata {
+  noteType?: string;           // meeting, project, journal, etc.
+  summary?: string;            // AI-generated summary
+  actionItems?: string[];      // Extracted action items
+  entities?: string[];         // Mentioned entities
+  [key: string]: unknown;      // Allow other metadata
+}
+
+/** Pinned note status */
+export interface PinnedNote {
+  noteId: string;
+  pinnedAt: string;            // ISO 8601
+}
+
+// ============================================
+// Saved Views
+// ============================================
+
+/** Saved view configuration */
+export interface SavedView {
+  id: string;
+  name: string;
+  filters: {
+    tags?: string[];
+    noteType?: string;
+    dateRange?: {
+      start?: string;
+      end?: string;
+    };
+    searchQuery?: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ============================================
+// Search Types
+// ============================================
+
+/** Search result with highlighting */
+export interface SearchResult {
+  noteId: string;
+  note: Note;
+  snippets: SearchSnippet[];
+  score: number;
+}
+
+/** Highlighted snippet from search */
+export interface SearchSnippet {
+  text: string;
+  highlights: Array<{
+    start: number;
+    end: number;
+  }>;
+}
+
+/** Advanced search request */
+export interface AdvancedSearchRequest {
+  query: string;
+  filters?: {
+    tags?: string[];
+    noteType?: string;
+    dateRange?: {
+      start?: string;
+      end?: string;
+    };
+  };
+  limit?: number;
+  semantic?: boolean;          // Use semantic search if available
+}
+
+// ============================================
+// API Response Types
+// ============================================
+
+/** Paginated threads list response */
+export interface ThreadsListResponse {
+  threads: Thread[];
+  cursor: string | null;
+  hasMore: boolean;
+}
+
+/** Tags list response */
+export interface TagsListResponse {
+  tags: Array<{
+    name: string;
+    count: number;
+  }>;
 }
 

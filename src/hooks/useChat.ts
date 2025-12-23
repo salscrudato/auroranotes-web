@@ -5,7 +5,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { ChatMessage, Source, StreamSource } from '../lib/types';
+import type { ChatMessage, Source, StreamSource, ContextSource } from '../lib/types';
 import { sendChatMessage, sendChatMessageStreaming, ApiRequestError } from '../lib/api';
 import { CHAT, STORAGE_KEYS } from '../lib/constants';
 
@@ -24,6 +24,10 @@ interface UseChatReturn {
   retryLastMessage: () => Promise<void>;
   clearChat: () => void;
   cancelStream: () => void;
+  /** Follow-up question suggestions from the last response */
+  followups: string[];
+  /** Context sources retrieved but not cited */
+  contextSources: ContextSource[];
 }
 
 /**
@@ -79,6 +83,8 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
   const [messages, setMessages] = useState<ChatMessage[]>(() => loadChatHistory());
   const [loadingState, setLoadingState] = useState<ChatLoadingState>('idle');
   const [activeSource, setActiveSource] = useState<Source | null>(null);
+  const [followups, setFollowups] = useState<string[]>([]);
+  const [contextSources, setContextSources] = useState<ContextSource[]>([]);
 
   // Ref to track the current stream controller
   const streamControllerRef = useRef<AbortController | null>(null);
@@ -139,6 +145,10 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
       setMessages(prev => [...prev, initialMessage]);
       setLoadingState('streaming');
 
+      // Clear previous followups and context sources for new message
+      setFollowups([]);
+      setContextSources([]);
+
       try {
         const controller = await sendChatMessageStreaming(text, {
           onSources: (sources) => {
@@ -147,6 +157,18 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
               prev.map(m =>
                 m.id === assistantMessageId
                   ? { ...m, sources: sources.map(streamSourceToSource) }
+                  : m
+              )
+            );
+          },
+          onContextSources: (sources) => {
+            // Store context sources (retrieved but not cited)
+            setContextSources(sources);
+            // Also add to message for persistence
+            setMessages(prev =>
+              prev.map(m =>
+                m.id === assistantMessageId
+                  ? { ...m, contextSources: sources }
                   : m
               )
             );
@@ -186,6 +208,14 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
             streamingMessageIdRef.current = null;
             streamControllerRef.current = null;
             setLoadingState('error');
+          },
+          onFollowups: (suggestions) => {
+            // Store follow-up question suggestions
+            setFollowups(suggestions);
+          },
+          onHeartbeat: (_seq) => {
+            // Heartbeat received - could update UI to show connection is alive
+            // Currently a no-op, but useful for detecting stale connections
           },
         });
 
@@ -274,6 +304,8 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
     setMessages([]);
     setActiveSource(null);
     setLoadingState('idle');
+    setFollowups([]);
+    setContextSources([]);
     localStorage.removeItem(STORAGE_KEYS.CHAT_HISTORY);
   }, [cancelStream]);
 
@@ -286,6 +318,8 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
     retryLastMessage,
     clearChat,
     cancelStream,
+    followups,
+    contextSources,
   };
 }
 

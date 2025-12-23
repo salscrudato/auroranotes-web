@@ -161,3 +161,13 @@ export function toE164(phoneNumber: string): string {
   // Return as-is with + prefix
   return `+${digits}`;
 }
+
+/**
+ * Format duration in seconds as MM:SS
+ * Used for audio playback time display
+ */
+export function formatTime(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}

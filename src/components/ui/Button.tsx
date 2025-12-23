@@ -7,8 +7,7 @@ import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { cn } from '../../lib/utils';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'default' | 'primary' | 'ghost' | 'danger' | 'ai';
-  size?: 'xs' | 'sm' | 'md' | 'lg' | 'icon';
+  variant?: 'default' | 'primary' | 'ghost' | 'danger';
   children: ReactNode;
 }
 
@@ -38,26 +37,16 @@ const variants = {
     'bg-transparent border border-[var(--color-border)] text-[var(--color-danger)]',
     'hover:bg-[var(--color-danger-bg)] hover:border-[var(--color-danger-border)]',
   ].join(' '),
-  ai: [
-    'bg-gradient-to-br from-[#5B5FE7] to-[#7C3AED] border border-transparent text-white',
-    'hover:opacity-90',
-  ].join(' '),
 };
 
-const sizes = {
-  xs: 'h-[26px] px-2.5 text-xs rounded-[var(--radius-sm)]',
-  sm: 'h-8 px-3 text-sm rounded-[var(--radius-sm)]',
-  md: 'h-10 px-4 text-sm rounded-[var(--radius-md)]',
-  lg: 'h-12 px-6 text-base rounded-[var(--radius-lg)]',
-  icon: 'h-9 w-9 min-w-[36px] rounded-[var(--radius-md)]',
-};
+const sizeStyles = 'h-10 px-4 text-sm rounded-[var(--radius-md)]';
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = 'default', size = 'md', children, ...props }, ref) => {
+  ({ className, variant = 'default', children, ...props }, ref) => {
     return (
       <button
         ref={ref}
-        className={cn(baseStyles, variants[variant], sizes[size], className)}
+        className={cn(baseStyles, variants[variant], sizeStyles, className)}
         {...props}
       >
         {children}

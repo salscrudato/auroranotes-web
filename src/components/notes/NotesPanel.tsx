@@ -5,7 +5,7 @@
  */
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Search, ArrowUp, Mic, Play, Pause, Check, X, Sparkles, AlertTriangle, RotateCcw, Tag, FileText } from 'lucide-react';
+import { Search, ArrowUp, Mic, X, Tag, FileText } from 'lucide-react';
 import type { Note } from '../../lib/types';
 import { normalizeNote, groupNotesByDate } from '../../lib/format';
 import { triggerHaptic } from '../../lib/utils';
@@ -20,6 +20,7 @@ import { NoteCardSkeleton } from './NoteCardSkeleton';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { EditNoteModal } from './EditNoteModal';
 import { EmptyState } from '../common/EmptyState';
+import { VoicePreviewBar } from './VoicePreviewBar';
 
 interface NotesPanelProps {
   className?: string;
@@ -142,13 +143,6 @@ export function NotesPanel({ className = '', highlightNoteId, onNoteHighlighted,
       startRecording();
     }
   }, [isRecording, startRecording, stopRecording]);
-
-  // Format duration as MM:SS
-  const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
 
   // Track mounted state and cleanup AbortController on unmount
   useEffect(() => {
@@ -485,119 +479,22 @@ export function NotesPanel({ className = '', highlightNoteId, onNoteHighlighted,
         <div className={`composer ${composerFocused || text || isPreviewing ? 'composer-expanded' : ''}`}>
           {/* Audio Preview Bar with Editable Transcript */}
           {isPreviewing && (
-            <div className="audio-preview-container">
-              {/* Playback controls */}
-              <div className="audio-preview-bar">
-                <button
-                  className="audio-preview-play-btn"
-                  onClick={isPlaying ? pausePreview : playPreview}
-                  aria-label={isPlaying ? 'Pause preview' : 'Play preview'}
-                  type="button"
-                >
-                  {isPlaying ? <Pause size={18} /> : <Play size={18} />}
-                </button>
-                <div
-                  className="audio-preview-progress"
-                  role="progressbar"
-                  aria-label="Audio playback progress"
-                  aria-valuenow={Math.round(currentTime)}
-                  aria-valuemin={0}
-                  aria-valuemax={Math.round(duration)}
-                  aria-valuetext={`${formatTime(currentTime)} of ${formatTime(duration)}`}
-                >
-                  <div
-                    className="audio-preview-progress-bar"
-                    style={{ width: duration > 0 ? `${(currentTime / duration) * 100}%` : '0%' }}
-                  />
-                </div>
-                <span className="audio-preview-time" aria-hidden="true">
-                  {formatTime(currentTime)} / {formatTime(duration)}
-                </span>
-              </div>
-
-              {/* Editable transcript with enhancement status */}
-              <div className="audio-preview-transcript">
-                {isEnhancing && (
-                  <div className="enhancement-status">
-                    <span className="enhancement-badge">
-                      <Sparkles size={12} />
-                      AI enhancing...
-                    </span>
-                    <button
-                      className="enhancement-skip-btn"
-                      onClick={skipEnhancement}
-                      type="button"
-                    >
-                      Use original
-                    </button>
-                  </div>
-                )}
-                <textarea
-                  className={`audio-preview-transcript-input ${isEnhancing ? 'enhancing' : ''}`}
-                  value={transcript}
-                  onChange={(e) => setTranscript(e.target.value)}
-                  placeholder={isEnhancing ? 'Enhancing with AI...' : 'Transcript will appear here...'}
-                  aria-label="Edit transcript"
-                  disabled={isEnhancing}
-                />
-                {rawTranscript && !isEnhancing && transcript !== rawTranscript && (
-                  <div className="enhancement-comparison">
-                    <button
-                      className="enhancement-toggle-btn"
-                      onClick={() => setTranscript(rawTranscript)}
-                      type="button"
-                    >
-                      Show original
-                    </button>
-                  </div>
-                )}
-                {/* Enhancement failed notice with retry */}
-                {enhancementFailed && !isEnhancing && (
-                  <div className="enhancement-failed-notice">
-                    <AlertTriangle size={14} />
-                    <span>AI enhancement failed. Using original transcript.</span>
-                    <button
-                      className="btn"
-                      onClick={enhanceNow}
-                      type="button"
-                    >
-                      <RotateCcw size={12} />
-                      Retry
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Action buttons */}
-              <div className="audio-preview-footer">
-                <span className="audio-preview-hint">
-                  {isEnhancing ? 'AI is cleaning up your transcript...' : 'Edit the transcript above, then confirm or discard'}
-                </span>
-                <div className="audio-preview-actions">
-                  <button
-                    className="audio-preview-cancel-btn"
-                    onClick={cancelRecording}
-                    aria-label="Discard recording"
-                    title="Discard"
-                    type="button"
-                  >
-                    <X size={16} />
-                    <span>Discard</span>
-                  </button>
-                  <button
-                    className="audio-preview-confirm-btn"
-                    onClick={handleConfirmTranscript}
-                    disabled={!transcript.trim()}
-                    aria-label="Add to note"
-                    title="Add to note"
-                    type="button"
-                  >
-                    <Check size={16} />
-                    <span>Add to note</span>
-                  </button>
-                </div>
-              </div>
-            </div>
+            <VoicePreviewBar
+              isPlaying={isPlaying}
+              currentTime={currentTime}
+              duration={duration}
+              onPlay={playPreview}
+              onPause={pausePreview}
+              transcript={transcript}
+              rawTranscript={rawTranscript}
+              isEnhancing={isEnhancing}
+              enhancementFailed={enhancementFailed}
+              onTranscriptChange={setTranscript}
+              onSkipEnhancement={skipEnhancement}
+              onEnhanceNow={enhanceNow}
+              onConfirm={handleConfirmTranscript}
+              onCancel={cancelRecording}
+            />
           )}
 
           {/* Show live transcript while recording */}

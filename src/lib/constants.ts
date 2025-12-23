@@ -11,9 +11,12 @@ export const API = {
   ENDPOINTS: {
     HEALTH: '/health',
     NOTES: '/notes',
+    NOTES_SEARCH: '/notes/search',
     CHAT: '/chat',
+    THREADS: '/threads',
     FEEDBACK: '/feedback',
     TRANSCRIBE: '/transcribe',
+    TAGS: '/tags',
   },
   TIMEOUTS: {
     DEFAULT: 10000,      // 10 seconds
@@ -21,6 +24,7 @@ export const API = {
     CHAT: 30000,         // 30 seconds for AI responses
     STREAM: 60000,       // 60 seconds for streaming responses
     TRANSCRIBE: 30000,   // 30 seconds for audio transcription
+    SEARCH: 15000,       // 15 seconds for search
   },
   RETRY: {
     MAX_RETRIES: 1,
@@ -64,13 +68,9 @@ export const UI = {
 
 export const STORAGE_KEYS = {
   CHAT_HISTORY: 'aurora-chat-history',
-} as const;
-
-// ===========================================
-// Feature Flags
-// ===========================================
-
-export const FEATURES = {
-  ENABLE_OFFLINE_BANNER: true,
+  ACTIVE_THREAD_ID: 'aurora-active-thread',
+  PINNED_NOTES: 'aurora-pinned-notes',
+  SAVED_VIEWS: 'aurora-saved-views',
+  CHAT_FILTERS: 'aurora-chat-filters',
 } as const;
 

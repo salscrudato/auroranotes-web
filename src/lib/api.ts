@@ -20,9 +20,17 @@ import type {
   StreamSource,
   StreamEvent,
   ChatMeta,
+  ContextSource,
   FeedbackRating,
   FeedbackResponse,
   TranscriptionResponse,
+  Thread,
+  ThreadDetail,
+  ThreadsListResponse,
+  TagsListResponse,
+  ChatFilters,
+  SearchResult,
+  AdvancedSearchRequest,
 } from './types';
 import { API, NOTES, CHAT } from './constants';
 
@@ -562,14 +570,95 @@ function formatDateForSource(isoDate: string): string {
 }
 
 // ============================================
+// SSE Stream Processing (Shared)
+// ============================================
+
+/**
+ * Generic SSE event handler callback type
+ */
+interface SSEEventHandlers {
+  onSources?: (sources: StreamSource[]) => void;
+  onContextSources?: (sources: ContextSource[]) => void;
+  onToken?: (token: string) => void;
+  onDone?: (meta: ChatMeta) => void;
+  onError?: (error: string) => void;
+  onFollowups?: (followups: string[]) => void;
+  onHeartbeat?: (seq: number) => void;
+}
+
+/**
+ * Process an SSE stream from the API
+ * Shared utility for chat streaming and transcript enhancement
+ */
+async function processSSEStream(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  handlers: SSEEventHandlers
+): Promise<void> {
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.trim() || !line.startsWith('data: ')) continue;
+
+        try {
+          const event: StreamEvent = JSON.parse(line.slice(6));
+
+          switch (event.type) {
+            case 'sources':
+              handlers.onSources?.(event.sources || []);
+              break;
+            case 'context_sources':
+              handlers.onContextSources?.(event.contextSources || []);
+              break;
+            case 'token':
+              handlers.onToken?.(event.content || '');
+              break;
+            case 'done':
+              handlers.onDone?.(event.meta!);
+              break;
+            case 'error':
+              handlers.onError?.(event.error || 'Stream error');
+              break;
+            case 'followups':
+              handlers.onFollowups?.(event.followups || []);
+              break;
+            case 'heartbeat':
+              handlers.onHeartbeat?.(event.seq ?? 0);
+              break;
+          }
+        } catch {
+          // Skip malformed JSON lines
+        }
+      }
+    }
+  } catch (err) {
+    if (err instanceof Error && err.name !== 'AbortError') {
+      handlers.onError?.(err.message);
+    }
+  }
+}
+
+// ============================================
 // Streaming Chat
 // ============================================
 
 export interface StreamCallbacks {
   onSources?: (sources: StreamSource[]) => void;
+  onContextSources?: (sources: ContextSource[]) => void;
   onToken?: (token: string) => void;
   onDone?: (meta: ChatMeta) => void;
   onError?: (error: string) => void;
+  onFollowups?: (followups: string[]) => void;
+  onHeartbeat?: (seq: number) => void;
 }
 
 /**
@@ -639,55 +728,8 @@ export async function sendChatMessageStreaming(
       throw new ApiRequestError('Response body not available', 0, 'STREAM_ERROR');
     }
 
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    // Process stream in background
-    (async () => {
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          // Split on newlines - SSE events can be separated by \n or \n\n
-          const lines = buffer.split('\n');
-          // Keep the last potentially incomplete line in buffer
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            // Skip empty lines (SSE uses blank lines as event separators)
-            if (!line.trim()) continue;
-            if (!line.startsWith('data: ')) continue;
-
-            try {
-              const event: StreamEvent = JSON.parse(line.slice(6));
-
-              switch (event.type) {
-                case 'sources':
-                  callbacks.onSources?.(event.sources || []);
-                  break;
-                case 'token':
-                  callbacks.onToken?.(event.content || '');
-                  break;
-                case 'done':
-                  callbacks.onDone?.(event.meta!);
-                  break;
-                case 'error':
-                  callbacks.onError?.(event.error || 'Stream error');
-                  break;
-              }
-            } catch {
-              // Skip malformed JSON lines
-            }
-          }
-        }
-      } catch (err) {
-        if (err instanceof Error && err.name !== 'AbortError') {
-          callbacks.onError?.(err.message);
-        }
-      }
-    })();
+    // Process stream in background using shared helper
+    processSSEStream(reader, callbacks);
 
     return controller;
   } catch (err) {
@@ -743,13 +785,6 @@ export async function submitFeedback(
       }),
     }
   );
-}
-
-/**
- * Get API base URL (for display/copy)
- */
-export function getApiBaseUrl(): string {
-  return getApiBase();
 }
 
 // ============================================
@@ -920,51 +955,17 @@ ${trimmed}
       throw new ApiRequestError('No response body', 0, 'STREAM_ERROR');
     }
 
+    // Accumulate text for onComplete callback
     let fullText = '';
-    const decoder = new TextDecoder();
-
-    (async () => {
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
-
-          for (const line of lines) {
-            if (!line.trim()) continue;
-            if (!line.startsWith('data: ')) continue;
-
-            try {
-              const event: StreamEvent = JSON.parse(line.slice(6));
-
-              switch (event.type) {
-                case 'token':
-                  if (event.content) {
-                    fullText += event.content;
-                    callbacks.onToken?.(event.content);
-                  }
-                  break;
-                case 'done':
-                  callbacks.onComplete?.(fullText.trim());
-                  break;
-                case 'error':
-                  callbacks.onError?.(event.error || 'Enhancement failed');
-                  break;
-                // Ignore 'sources' event for enhancement
-              }
-            } catch {
-              // Skip malformed JSON lines
-            }
-          }
-        }
-      } catch (err) {
-        if (err instanceof Error && err.name !== 'AbortError') {
-          callbacks.onError?.(err.message);
-        }
-      }
-    })();
+    processSSEStream(reader, {
+      onToken: (token) => {
+        fullText += token;
+        callbacks.onToken?.(token);
+      },
+      onDone: () => callbacks.onComplete?.(fullText.trim()),
+      onError: (error) => callbacks.onError?.(error),
+      // onSources is ignored for enhancement
+    });
 
     return controller;
   } catch (err) {
@@ -976,4 +977,238 @@ ${trimmed}
     }
     throw new ApiRequestError('Enhancement failed');
   }
+}
+
+// ============================================
+// Thread APIs
+// ============================================
+
+/**
+ * List threads with pagination
+ */
+export async function listThreads(
+  cursor?: string,
+  limit = 20,
+  signal?: AbortSignal
+): Promise<ThreadsListResponse> {
+  const params = new URLSearchParams();
+  params.set('limit', String(Math.min(Math.max(1, limit), 50)));
+  if (cursor) params.set('cursor', cursor);
+
+  const path = `${API.ENDPOINTS.THREADS}?${params.toString()}`;
+  const headers = await getAuthHeaders();
+
+  return await request<ThreadsListResponse>(path, { headers, signal });
+}
+
+/**
+ * Get thread detail with messages
+ */
+export async function getThread(
+  threadId: string,
+  signal?: AbortSignal
+): Promise<ThreadDetail> {
+  const headers = await getAuthHeaders();
+  return await request<ThreadDetail>(`${API.ENDPOINTS.THREADS}/${threadId}`, { headers, signal });
+}
+
+/**
+ * Create a new thread
+ */
+export async function createThread(title?: string): Promise<Thread> {
+  const headers = await getAuthHeaders();
+  return await request<Thread>(API.ENDPOINTS.THREADS, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ title: title || 'New Chat' }),
+  });
+}
+
+/**
+ * Update thread title
+ */
+export async function updateThread(threadId: string, title: string): Promise<Thread> {
+  const headers = await getAuthHeaders();
+  return await request<Thread>(`${API.ENDPOINTS.THREADS}/${threadId}`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify({ title }),
+  });
+}
+
+/**
+ * Delete a thread
+ */
+export async function deleteThread(threadId: string): Promise<{ success: boolean }> {
+  const headers = await getAuthHeaders();
+  return await request<{ success: boolean }>(`${API.ENDPOINTS.THREADS}/${threadId}`, {
+    method: 'DELETE',
+    headers,
+  });
+}
+
+/**
+ * Send a message to a thread (streaming)
+ */
+export async function sendThreadMessage(
+  threadId: string,
+  message: string,
+  filters?: ChatFilters,
+  callbacks?: StreamCallbacks
+): Promise<AbortController> {
+  const apiBase = getApiBase();
+
+  if (!apiBase) {
+    throw new ApiRequestError(
+      'Missing VITE_API_BASE. Add it to .env.local and restart the dev server.',
+      0,
+      'MISSING_CONFIG'
+    );
+  }
+
+  const validation = validateChatMessage(message);
+  if (!validation.valid) {
+    throw new ApiRequestError(validation.error!, 400, 'VALIDATION_ERROR');
+  }
+
+  const controller = new AbortController();
+  const headers = await getAuthHeaders();
+
+  const body: Record<string, unknown> = {
+    message: message.trim(),
+    stream: true,
+    threadId,
+  };
+  if (filters) {
+    body.filters = filters;
+  }
+
+  try {
+    const response = await fetch(`${apiBase}${API.ENDPOINTS.CHAT}`, {
+      method: 'POST',
+      headers: {
+        ...headers,
+        'Accept': 'text/event-stream',
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errorBody = await safeJson<ApiError>(response);
+      const { message: errMsg, code } = extractErrorInfo(errorBody, `Request failed: ${response.status}`);
+      throw new ApiRequestError(errMsg, response.status, code);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new ApiRequestError('Response body not available', 0, 'STREAM_ERROR');
+    }
+
+    if (callbacks) {
+      processSSEStream(reader, callbacks);
+    }
+
+    return controller;
+  } catch (err) {
+    if (err instanceof ApiRequestError) {
+      throw err;
+    }
+    if (err instanceof Error) {
+      if (err.name === 'AbortError') {
+        throw new ApiRequestError('Stream aborted', 0, 'ABORTED');
+      }
+      throw new ApiRequestError(err.message, 0, 'NETWORK_ERROR');
+    }
+    throw new ApiRequestError('An unexpected error occurred');
+  }
+}
+
+// ============================================
+// Tags APIs
+// ============================================
+
+/**
+ * Get all tags for the user
+ */
+export async function listTags(signal?: AbortSignal): Promise<TagsListResponse> {
+  const headers = await getAuthHeaders();
+  return await request<TagsListResponse>(API.ENDPOINTS.TAGS, { headers, signal });
+}
+
+// ============================================
+// Search APIs
+// ============================================
+
+/**
+ * Advanced search with filters and optional semantic search
+ */
+export async function searchNotes(
+  searchRequest: AdvancedSearchRequest,
+  signal?: AbortSignal
+): Promise<{ results: SearchResult[] }> {
+  const headers = await getAuthHeaders();
+  return await request<{ results: SearchResult[] }>(
+    API.ENDPOINTS.NOTES_SEARCH,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(searchRequest),
+      signal,
+    },
+    API.TIMEOUTS.SEARCH
+  );
+}
+
+/**
+ * Get a single note by ID
+ */
+export async function getNote(noteId: string, signal?: AbortSignal): Promise<RawNote> {
+  const headers = await getAuthHeaders();
+  return await request<RawNote>(`${API.ENDPOINTS.NOTES}/${noteId}`, { headers, signal });
+}
+
+/**
+ * Update note with full data (title, tags, metadata)
+ */
+export async function updateNoteWithMetadata(
+  id: string,
+  data: {
+    text?: string;
+    title?: string;
+    tags?: string[];
+    metadata?: Record<string, unknown>;
+  }
+): Promise<RawNote> {
+  const headers = await getAuthHeaders();
+  return await request<RawNote>(`${API.ENDPOINTS.NOTES}/${id}`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Create note with full data (title, tags, metadata)
+ */
+export async function createNoteWithMetadata(data: {
+  text: string;
+  title?: string;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+}): Promise<RawNote> {
+  const validation = validateNoteText(data.text);
+  if (!validation.valid) {
+    throw new ApiRequestError(validation.error!, 400, 'VALIDATION_ERROR');
+  }
+
+  const headers = await getAuthHeaders();
+  return await request<RawNote>(API.ENDPOINTS.NOTES, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      ...data,
+      text: data.text.trim(),
+    }),
+  });
 }
