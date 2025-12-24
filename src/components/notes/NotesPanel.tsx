@@ -3,28 +3,29 @@
  */
 
 import { useState, useMemo, useCallback, useEffect, useRef, memo } from 'react';
-import { Search, ArrowUp, Mic, X, Tag, FileText } from 'lucide-react';
+import { Search, ArrowUp, X, Tag, FileText } from 'lucide-react';
 import type { Note } from '../../lib/types';
 import { normalizeNote, groupNotesByDate } from '../../lib/format';
-import { triggerHaptic } from '../../lib/utils';
 import { listNotes, createNote, deleteNote, updateNote, ApiRequestError } from '../../lib/api';
 import { NOTES } from '../../lib/constants';
 import { useToast } from '../common/useToast';
 import { useAnnounce } from '../common/LiveRegion';
-import { useSpeechToText } from '../../hooks/useSpeechToText';
 import { useNoteClassifier } from '../../hooks/useNoteClassifier';
 import { NoteCard } from './NoteCard';
 import { NoteCardSkeleton } from './NoteCardSkeleton';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { EditNoteModal } from './EditNoteModal';
 import { EmptyState } from '../common/EmptyState';
-import { VoicePreviewBar } from './VoicePreviewBar';
+import { usePullToRefresh } from '../../hooks/usePullToRefresh';
+import { PullToRefreshIndicator } from '../common/PullToRefreshIndicator';
 
 interface NotesPanelProps {
   className?: string;
   highlightNoteId?: string | null;
   onNoteHighlighted?: () => void;
   onNotesLoaded?: (notes: Note[], hasMore: boolean, loadMore: () => Promise<void>) => void;
+  /** Register a callback to add notes externally (e.g., from mobile voice recording) */
+  onRegisterAddNote?: (addNote: (note: Note) => void) => void;
 }
 
 export const NotesPanel = memo(function NotesPanel({
@@ -32,6 +33,7 @@ export const NotesPanel = memo(function NotesPanel({
   highlightNoteId,
   onNoteHighlighted,
   onNotesLoaded,
+  onRegisterAddNote,
 }: NotesPanelProps) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [pendingNotes, setPendingNotes] = useState<Note[]>([]);
@@ -67,38 +69,18 @@ export const NotesPanel = memo(function NotesPanel({
   const { showToast } = useToast();
   const announce = useAnnounce();
 
-  // Speech-to-text for voice input
-  // Note: autoEnhance is disabled because the enhancement uses the chat API
-  // which performs RAG retrieval and responds as if asking a question.
-  // Raw transcription is used directly for note drafting.
-  const {
-    state: recordingState,
-    isSupported: isSpeechSupported,
-    startRecording,
-    stopRecording,
-    cancelRecording,
-    confirmTranscription,
-    playPreview,
-    pausePreview,
-    isPlaying,
-    duration,
-    currentTime,
-    transcript,
-    setTranscript,
-    rawTranscript,
-    skipEnhancement,
-    enhanceNow,
-    enhancementFailed,
-  } = useSpeechToText({
-    onError: useCallback((errorMsg: string) => {
-      showToast(errorMsg, 'error');
-    }, [showToast]),
-    autoEnhance: false, // Disabled - use raw transcription for note drafting
-  });
+  // Pull-to-refresh refresh function ref (set after loadNotes is defined)
+  const refreshFnRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
-  const isRecording = recordingState === 'recording';
-  const isEnhancing = recordingState === 'enhancing';
-  const isPreviewing = recordingState === 'preview' || recordingState === 'enhancing';
+  const {
+    containerRef: pullRefreshRef,
+    pullDistance,
+    isRefreshing,
+    isPulledEnough,
+  } = usePullToRefresh({
+    onRefresh: () => refreshFnRef.current(),
+    enabled: !loading && !loadingMore,
+  });
 
   // Note classifier for intelligent suggestions
   const {
@@ -123,29 +105,6 @@ export const NotesPanel = memo(function NotesPanel({
       showToast('Template applied', 'success');
     }
   }, [applyTemplate, showToast]);
-
-  // Handle confirming the voice transcript
-  const handleConfirmTranscript = useCallback(() => {
-    triggerHaptic('light');
-    if (transcript.trim()) {
-      setText((prev) => {
-        const newText = prev ? `${prev} ${transcript.trim()}` : transcript.trim();
-        return newText.slice(0, NOTES.MAX_LENGTH);
-      });
-      showToast('Voice note added', 'success');
-    }
-    confirmTranscription();
-  }, [transcript, confirmTranscription, showToast]);
-
-  // Wrapper for mic button with haptic feedback
-  const handleMicClick = useCallback(() => {
-    triggerHaptic('medium');
-    if (isRecording) {
-      stopRecording();
-    } else {
-      startRecording();
-    }
-  }, [isRecording, startRecording, stopRecording]);
 
   // Track mounted state and cleanup AbortController on unmount
   useEffect(() => {
@@ -255,6 +214,14 @@ export const NotesPanel = memo(function NotesPanel({
     loadMoreRef.current = loadMore;
   }, [loadMore]);
 
+  // Set up pull-to-refresh function
+  useEffect(() => {
+    refreshFnRef.current = async () => {
+      // Clear and reload notes from scratch
+      await loadNotes(undefined, false);
+    };
+  }, [loadNotes]);
+
   // Stable wrapper function that always calls the latest loadMore
   // This prevents the parent from re-rendering when loadMore changes
   const stableLoadMore = useCallback(async () => {
@@ -268,6 +235,14 @@ export const NotesPanel = memo(function NotesPanel({
       onNotesLoaded?.(notes, hasMore, stableLoadMore);
     }
   }, [notes, hasMore, loading, stableLoadMore, onNotesLoaded]);
+
+  // Register addNote callback for external note creation (mobile voice recording)
+  useEffect(() => {
+    const addNote = (note: Note) => {
+      setNotes((prev) => [note, ...prev]);
+    };
+    onRegisterAddNote?.(addNote);
+  }, [onRegisterAddNote]);
 
   const handleCreate = useCallback(async () => {
     if (!canSubmit) return;
@@ -479,39 +454,8 @@ export const NotesPanel = memo(function NotesPanel({
     <div className={`panel ${className}`}>
       <div className="panel-body">
         {/* Floating Composer */}
-        <div className={`composer ${composerFocused || text || isPreviewing ? 'composer-expanded' : ''}`}>
-          {/* Audio Preview Bar with Editable Transcript */}
-          {isPreviewing && (
-            <VoicePreviewBar
-              isPlaying={isPlaying}
-              currentTime={currentTime}
-              duration={duration}
-              onPlay={playPreview}
-              onPause={pausePreview}
-              transcript={transcript}
-              rawTranscript={rawTranscript}
-              isEnhancing={isEnhancing}
-              enhancementFailed={enhancementFailed}
-              onTranscriptChange={setTranscript}
-              onSkipEnhancement={skipEnhancement}
-              onEnhanceNow={enhanceNow}
-              onConfirm={handleConfirmTranscript}
-              onCancel={cancelRecording}
-            />
-          )}
-
-          {/* Show live transcript while recording */}
-          {isRecording && transcript && (
-            <div className="recording-transcript">
-              <span className="recording-transcript-label">Listening...</span>
-              <p className="recording-transcript-text">{transcript}</p>
-            </div>
-          )}
-
-          <div
-            className="composer-wrapper"
-            style={{ display: isPreviewing ? 'none' : undefined }}
-          >
+        <div className={`composer ${composerFocused || text ? 'composer-expanded' : ''}`}>
+          <div className="composer-wrapper">
             <span id="composer-hint" className="sr-only">
               Press Cmd+Enter or Ctrl+Enter to save
             </span>
@@ -526,35 +470,23 @@ export const NotesPanel = memo(function NotesPanel({
               placeholder="Capture a thought..."
               aria-label="Write a note"
               aria-describedby="composer-hint"
-              disabled={saving || isRecording}
+              disabled={saving}
             />
             <div className="composer-actions">
               <button
                 className="composer-template-btn"
                 onClick={() => setShowTemplates(!showTemplates)}
-                disabled={saving || isRecording}
+                disabled={saving}
                 aria-label="Choose template"
                 title="Choose template"
                 type="button"
               >
                 <FileText size={18} />
               </button>
-              {isSpeechSupported && (
-                <button
-                  className={`composer-mic-btn ${isRecording ? 'recording' : ''}`}
-                  onClick={handleMicClick}
-                  disabled={saving}
-                  aria-label={isRecording ? 'Stop recording' : 'Start voice input'}
-                  title={isRecording ? 'Stop recording' : 'Voice input'}
-                  type="button"
-                >
-                  <Mic size={18} />
-                </button>
-              )}
               <button
                 className="composer-send-btn"
                 onClick={handleCreate}
-                disabled={!canSubmit || isRecording}
+                disabled={!canSubmit}
                 aria-label="Save note"
                 title="Save note"
               >
@@ -654,8 +586,19 @@ export const NotesPanel = memo(function NotesPanel({
 
         {error && <div className="error-inline">{error}</div>}
 
-        {/* Scrollable Notes List with Infinite Scroll */}
-        <div className="notes-scroll" ref={scrollRef}>
+        {/* Scrollable Notes List with Infinite Scroll and Pull-to-Refresh */}
+        <div
+          className="notes-scroll"
+          ref={(el) => {
+            scrollRef.current = el;
+            (pullRefreshRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+          }}
+        >
+          <PullToRefreshIndicator
+            pullDistance={pullDistance}
+            isRefreshing={isRefreshing}
+            isPulledEnough={isPulledEnough}
+          />
           {loading && notes.length === 0 ? (
             <div className="notes-list" role="list" aria-label="Notes list">
               <NoteCardSkeleton count={3} />
