@@ -1,22 +1,23 @@
 /**
  * useConversations hook
  * Manage multiple chat conversations with local storage persistence
+ * Uses user-scoped storage to prevent cross-user data leakage
  */
 
 import { useState, useCallback, useEffect } from 'react';
 import { nanoid } from 'nanoid';
 import type { Conversation, ChatMessage } from '../lib/types';
+import { ScopedStorageKeys, getScopedItem, setScopedItem, getStorageUserId } from '../lib/scopedStorage';
 
-const STORAGE_KEY = 'aurora_conversations';
 const MAX_CONVERSATIONS = 50;
 
 function loadConversations(): Conversation[] {
+  if (!getStorageUserId()) return [];
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const convs = JSON.parse(stored) as Conversation[];
+    const convs = getScopedItem<Conversation[]>(ScopedStorageKeys.conversations());
+    if (convs) {
       // Sort by updatedAt descending
-      return convs.sort((a, b) => 
+      return convs.sort((a, b) =>
         new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
       );
     }
@@ -27,10 +28,11 @@ function loadConversations(): Conversation[] {
 }
 
 function saveConversations(conversations: Conversation[]): void {
+  if (!getStorageUserId()) return;
   try {
     // Limit to max conversations
     const toSave = conversations.slice(0, MAX_CONVERSATIONS);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+    setScopedItem(ScopedStorageKeys.conversations(), toSave);
   } catch (err) {
     console.error('Failed to save conversations:', err);
   }

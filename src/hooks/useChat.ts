@@ -7,7 +7,8 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { ChatMessage, Source, StreamSource, ContextSource } from '../lib/types';
 import { sendChatMessage, sendChatMessageStreaming, ApiRequestError } from '../lib/api';
-import { CHAT, STORAGE_KEYS } from '../lib/constants';
+import { CHAT } from '../lib/constants';
+import { ScopedStorageKeys, getScopedItem, setScopedItem, removeScopedItem, getStorageUserId } from '../lib/scopedStorage';
 
 export type ChatLoadingState = 'idle' | 'sending' | 'streaming' | 'error';
 
@@ -38,13 +39,14 @@ function generateMessageId(): string {
 }
 
 /**
- * Load chat history from localStorage
+ * Load chat history from user-scoped localStorage
  */
 function loadChatHistory(): ChatMessage[] {
+  // Only load if we have a user
+  if (!getStorageUserId()) return [];
   try {
-    const stored = localStorage.getItem(STORAGE_KEYS.CHAT_HISTORY);
-    if (stored) {
-      const messages = JSON.parse(stored) as ChatMessage[];
+    const messages = getScopedItem<ChatMessage[]>(ScopedStorageKeys.chatHistory());
+    if (messages) {
       // Limit to max history size
       return messages.slice(-CHAT.MAX_HISTORY_MESSAGES);
     }
@@ -55,12 +57,14 @@ function loadChatHistory(): ChatMessage[] {
 }
 
 /**
- * Save chat history to localStorage
+ * Save chat history to user-scoped localStorage
  */
 function saveChatHistory(messages: ChatMessage[]): void {
+  // Only save if we have a user
+  if (!getStorageUserId()) return;
   try {
     const toSave = messages.slice(-CHAT.MAX_HISTORY_MESSAGES);
-    localStorage.setItem(STORAGE_KEYS.CHAT_HISTORY, JSON.stringify(toSave));
+    setScopedItem(ScopedStorageKeys.chatHistory(), toSave);
   } catch {
     // Ignore storage errors
   }
@@ -308,7 +312,7 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
     setLoadingState('idle');
     setFollowups([]);
     setContextSources([]);
-    localStorage.removeItem(STORAGE_KEYS.CHAT_HISTORY);
+    removeScopedItem(ScopedStorageKeys.chatHistory());
   }, [cancelStream]);
 
   return {

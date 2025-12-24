@@ -1,24 +1,26 @@
 /**
  * useSavedViews hook - Local storage-based saved views
  * Ready for backend persistence when available
+ * Uses user-scoped storage to prevent cross-user data leakage
  */
 
 import { useState, useCallback, useEffect } from 'react';
-import { STORAGE_KEYS } from '../lib/constants';
 import type { SavedView } from '../lib/types';
+import { ScopedStorageKeys, getScopedItem, setScopedItem, getStorageUserId } from '../lib/scopedStorage';
 
 function loadSavedViews(): SavedView[] {
+  if (!getStorageUserId()) return [];
   try {
-    const stored = localStorage.getItem(STORAGE_KEYS.SAVED_VIEWS);
-    return stored ? JSON.parse(stored) : [];
+    return getScopedItem<SavedView[]>(ScopedStorageKeys.savedViews()) || [];
   } catch {
     return [];
   }
 }
 
 function persistSavedViews(views: SavedView[]): void {
+  if (!getStorageUserId()) return;
   try {
-    localStorage.setItem(STORAGE_KEYS.SAVED_VIEWS, JSON.stringify(views));
+    setScopedItem(ScopedStorageKeys.savedViews(), views);
   } catch {
     // Ignore storage errors
   }

@@ -16,6 +16,7 @@ import {
 } from '../lib/api';
 import { normalizeNote } from '../lib/format';
 import type { Note } from '../lib/types';
+import { getStorageUserId } from '../lib/scopedStorage';
 
 /**
  * Hook for paginated notes list with infinite scroll
@@ -75,10 +76,12 @@ export function useCreateNote() {
       const previousNotes = queryClient.getQueryData(queryKeys.notes.all);
 
       // Optimistically add note to cache
+      // Use authenticated user's uid as tenantId (backend derives this from Firebase UID)
+      const userId = getStorageUserId();
       const optimisticNote: Note = {
         id: `temp-${Date.now()}`,
         text: newNote.text,
-        tenantId: 'public',
+        tenantId: userId || 'pending', // Use uid or placeholder (will be replaced on success)
         createdAt: new Date(),
         updatedAt: new Date(),
       };

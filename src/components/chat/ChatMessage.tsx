@@ -55,8 +55,6 @@ interface ChatMessageProps {
   onFeedback?: (rating: FeedbackRating, comment?: string) => void;
   onFeedbackCommentChange?: (comment: string) => void;
   onCancelFeedback?: () => void;
-  suggestedQuestions?: string[];
-  onSuggestedQuestion?: (question: string) => void;
   isLastMessage?: boolean;
   onNoteClick?: (noteId: string) => void;
 }
@@ -71,9 +69,7 @@ export const ChatMessage = memo(function ChatMessage({
   onFeedback,
   onFeedbackCommentChange,
   onCancelFeedback,
-  suggestedQuestions,
-  onSuggestedQuestion,
-  isLastMessage = false,
+  isLastMessage: _isLastMessage = false,
   onNoteClick,
 }: ChatMessageProps) {
   const { showToast } = useToast();
@@ -212,14 +208,6 @@ export const ChatMessage = memo(function ChatMessage({
               <Copy size={12} />
             </button>
           )}
-        </div>
-      )}
-
-      {isLastMessage && isAssistantReady && suggestedQuestions?.length && onSuggestedQuestion && (
-        <div className="suggested-questions">
-          {suggestedQuestions.slice(0, 3).map((question, idx) => (
-            <button key={idx} className="suggestion-chip" onClick={() => onSuggestedQuestion(question)}>{question}</button>
-          ))}
         </div>
       )}
     </div>

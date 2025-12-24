@@ -1,17 +1,14 @@
 /**
  * EditNoteModal component
- * Modal for editing an existing note
- * Uses new Tailwind-based UI components
+ * Modal for editing an existing note with polished iOS-style design
  */
 
 import { memo, useState, useEffect, useRef, useCallback } from 'react';
-import { Save } from 'lucide-react';
+import { X, Loader2 } from 'lucide-react';
 import type { Note } from '../../lib/types';
 import { NOTES } from '../../lib/constants';
-import { cn } from '../../lib/utils';
+import { cn, triggerHaptic } from '../../lib/utils';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
-import { Button } from '../ui/Button';
-import { Dialog, DialogClose, DialogHeader, DialogTitle, DialogBody, DialogFooter } from '../ui/Dialog';
 
 interface EditNoteModalProps {
   note: Note | null;
@@ -28,21 +25,17 @@ export const EditNoteModal = memo(function EditNoteModal({
   onSave,
   onClose,
 }: EditNoteModalProps) {
-  // Initialize text from note - component is remounted with key when note changes
   const [text, setText] = useState(() => note?.text ?? '');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Use focus trap hook for proper focus management
   const modalRef = useFocusTrap<HTMLDivElement>({
     enabled: isOpen && !!note,
     onEscape: onClose,
     restoreFocus: true,
   });
 
-  // Auto-focus textarea when opened
   useEffect(() => {
     if (note && isOpen) {
-      // Focus textarea after a brief delay to ensure modal is visible
       setTimeout(() => textareaRef.current?.focus(), 100);
     }
   }, [note, isOpen]);
@@ -50,6 +43,7 @@ export const EditNoteModal = memo(function EditNoteModal({
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     if (!note || !text.trim() || isSaving) return;
+    triggerHaptic('light');
     onSave(note.id, text.trim());
   }, [note, text, isSaving, onSave]);
 
@@ -57,35 +51,71 @@ export const EditNoteModal = memo(function EditNoteModal({
   const isOverLimit = charCount > NOTES.MAX_LENGTH;
   const hasChanges = note?.text !== text;
   const canSave = hasChanges && text.trim() && !isOverLimit && !isSaving;
+  const charPercentage = Math.min((charCount / NOTES.MAX_LENGTH) * 100, 100);
 
-  if (!note) return null;
+  if (!note || !isOpen) return null;
 
   return (
-    <Dialog
-      open={isOpen}
-      onClose={onClose}
-      aria-labelledby="edit-note-title"
-      className="max-w-lg"
+    <div
+      className="fixed inset-0 z-[1000] flex items-center justify-center"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div ref={modalRef}>
-        <DialogHeader className="relative">
-          <DialogTitle id="edit-note-title">Edit Note</DialogTitle>
-          <DialogClose onClose={onClose} />
-        </DialogHeader>
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" />
 
-        <form onSubmit={handleSubmit}>
-          <DialogBody>
+      {/* Modal */}
+      <div
+        ref={modalRef}
+        style={{ width: 'calc(100% - 48px)', maxWidth: '400px' }}
+        className={cn(
+          'relative',
+          'bg-[var(--color-surface)]',
+          'rounded-2xl',
+          'shadow-2xl',
+          'animate-in zoom-in-95 fade-in duration-200',
+          'max-h-[80vh] flex flex-col',
+          'overflow-hidden'
+        )}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-note-title"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4">
+          <h2 id="edit-note-title" className="text-lg font-semibold text-[var(--color-text)]">
+            Edit Note
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className={cn(
+              'w-8 h-8 rounded-full',
+              'bg-[var(--color-bg-muted)] hover:bg-[var(--color-surface-hover)]',
+              'flex items-center justify-center',
+              'text-[var(--color-text-secondary)]',
+              'transition-colors duration-150',
+              '-mr-1'
+            )}
+            aria-label="Close"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Content */}
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+          <div className="flex-1 overflow-y-auto px-5 pb-4">
             <textarea
               ref={textareaRef}
               className={cn(
-                'w-full min-h-[200px] max-h-[400px] resize-y',
-                'p-4 text-base leading-relaxed',
-                'bg-[var(--color-surface)] text-[var(--color-text)]',
-                'border border-[var(--color-border)] rounded-[var(--radius-lg)]',
+                'w-full min-h-[140px] resize-none',
+                'px-4 py-3 text-[15px] leading-relaxed',
+                'bg-[var(--color-bg-muted)] text-[var(--color-text)]',
+                'border border-transparent rounded-xl',
                 'placeholder:text-[var(--color-placeholder)]',
-                'focus:outline-none focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/20',
+                'focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30',
                 'transition-all duration-150',
-                isOverLimit && 'border-[var(--color-danger)] focus:border-[var(--color-danger)]'
+                isOverLimit && 'ring-2 ring-[var(--color-danger)]/30'
               )}
               value={text}
               onChange={(e) => setText(e.target.value)}
@@ -97,33 +127,71 @@ export const EditNoteModal = memo(function EditNoteModal({
               aria-describedby="edit-note-char-count"
             />
 
-            <div
-              id="edit-note-char-count"
-              className={cn(
-                'text-xs text-right mt-2',
-                isOverLimit ? 'text-[var(--color-danger)] font-medium' : 'text-[var(--color-text-tertiary)]'
-              )}
-              role={isOverLimit ? 'alert' : undefined}
-            >
-              {isOverLimit
-                ? `Note too long: ${charCount.toLocaleString()} / ${NOTES.MAX_LENGTH.toLocaleString()}`
-                : `${charCount.toLocaleString()} / ${NOTES.MAX_LENGTH.toLocaleString()}`
-              }
+            {/* Character count - subtle */}
+            <div className="mt-2 flex justify-end">
+              <span
+                id="edit-note-char-count"
+                className={cn(
+                  'text-xs tabular-nums',
+                  isOverLimit
+                    ? 'text-[var(--color-danger)] font-medium'
+                    : charPercentage > 80
+                    ? 'text-amber-500'
+                    : 'text-[var(--color-text-tertiary)]'
+                )}
+                role={isOverLimit ? 'alert' : undefined}
+              >
+                {charCount.toLocaleString()} / {NOTES.MAX_LENGTH.toLocaleString()}
+              </span>
             </div>
-          </DialogBody>
+          </div>
 
-          <DialogFooter>
-            <Button type="button" variant="default" onClick={onClose} disabled={isSaving}>
+          {/* Footer */}
+          <div className="flex items-center gap-3 px-5 pb-5">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isSaving}
+              className={cn(
+                'flex-1 h-12 rounded-xl',
+                'text-[15px] font-medium',
+                'text-[var(--color-text)]',
+                'bg-[var(--color-bg-muted)]',
+                'hover:bg-[var(--color-surface-hover)]',
+                'active:scale-[0.98]',
+                'transition-all duration-150',
+                'disabled:opacity-50'
+              )}
+            >
               Cancel
-            </Button>
-            <Button type="submit" variant="primary" disabled={!canSave}>
-              <Save size={16} />
-              {isSaving ? 'Saving...' : 'Save Changes'}
-            </Button>
-          </DialogFooter>
+            </button>
+            <button
+              type="submit"
+              disabled={!canSave}
+              className={cn(
+                'flex-1 h-12 rounded-xl',
+                'text-[15px] font-semibold',
+                'bg-[var(--color-accent)] text-white',
+                'hover:bg-[var(--color-accent-hover)]',
+                'active:scale-[0.98]',
+                'transition-all duration-150',
+                'disabled:opacity-40 disabled:cursor-not-allowed',
+                'inline-flex items-center justify-center gap-2'
+              )}
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                'Save'
+              )}
+            </button>
+          </div>
         </form>
       </div>
-    </Dialog>
+    </div>
   );
 });
 

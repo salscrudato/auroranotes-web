@@ -1,35 +1,44 @@
 /**
  * Modal dialog for confirming destructive or important actions.
+ * Features iOS-style design with smooth animations.
  */
 
-import { memo, useMemo } from 'react';
-import { AlertTriangle } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { memo, useMemo, useCallback } from 'react';
+import { Trash2, AlertCircle, Info } from 'lucide-react';
+import { cn, triggerHaptic } from '../../lib/utils';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
-import { Button, type ButtonVariant } from '../ui/Button';
-import { Dialog, DialogClose } from '../ui/Dialog';
 
 type ConfirmVariant = 'danger' | 'warning' | 'default';
 
 interface VariantConfig {
-  iconClasses: string;
-  buttonVariant: ButtonVariant;
-  buttonClassName?: string;
+  iconBg: string;
+  iconColor: string;
+  buttonBg: string;
+  buttonHover: string;
+  icon: typeof Trash2;
 }
 
 const VARIANT_CONFIG: Record<ConfirmVariant, VariantConfig> = {
   danger: {
-    iconClasses: 'bg-[var(--color-danger-bg)] text-[var(--color-danger)]',
-    buttonVariant: 'danger',
+    iconBg: 'bg-red-500/10',
+    iconColor: 'text-red-500',
+    buttonBg: 'bg-red-500 hover:bg-red-600',
+    buttonHover: '',
+    icon: Trash2,
   },
   warning: {
-    iconClasses: 'bg-[var(--color-warning-bg)] text-[var(--color-warning)]',
-    buttonVariant: 'default',
-    buttonClassName: 'bg-[var(--color-warning)] text-white hover:bg-amber-600',
+    iconBg: 'bg-amber-500/10',
+    iconColor: 'text-amber-500',
+    buttonBg: 'bg-amber-500 hover:bg-amber-600',
+    buttonHover: '',
+    icon: AlertCircle,
   },
   default: {
-    iconClasses: 'bg-[var(--color-accent-subtle)] text-[var(--color-accent)]',
-    buttonVariant: 'primary',
+    iconBg: 'bg-indigo-500/10',
+    iconColor: 'text-indigo-500',
+    buttonBg: 'bg-indigo-500 hover:bg-indigo-600',
+    buttonHover: '',
+    icon: Info,
   },
 };
 
@@ -61,60 +70,107 @@ export const ConfirmDialog = memo(function ConfirmDialog({
   });
 
   const config = useMemo(() => VARIANT_CONFIG[variant], [variant]);
+  const IconComponent = config.icon;
 
-  return (
-    <Dialog
-      open={isOpen}
-      onClose={onCancel}
-      aria-labelledby="confirm-dialog-title"
-      aria-describedby="confirm-dialog-message"
-    >
-      <div ref={dialogRef} className="p-6 text-center">
-        <DialogClose onClose={onCancel} />
+  const handleConfirm = useCallback(() => {
+    triggerHaptic('medium');
+    onConfirm();
+  }, [onConfirm]);
 
-        <DialogIcon className={config.iconClasses} />
+  const handleCancel = useCallback(() => {
+    triggerHaptic('light');
+    onCancel();
+  }, [onCancel]);
 
-        <h3
-          id="confirm-dialog-title"
-          className="text-lg font-semibold text-[var(--color-text)] mb-2"
-        >
-          {title}
-        </h3>
+  if (!isOpen) return null;
 
-        <p
-          id="confirm-dialog-message"
-          className="text-sm text-[var(--color-text-secondary)] mb-6"
-        >
-          {message}
-        </p>
-
-        <div className="flex items-center justify-center gap-3">
-          <Button variant="default" onClick={onCancel}>
-            {cancelLabel}
-          </Button>
-          <Button
-            variant={config.buttonVariant}
-            onClick={onConfirm}
-            className={config.buttonClassName}
-          >
-            {confirmLabel}
-          </Button>
-        </div>
-      </div>
-    </Dialog>
-  );
-});
-
-/** Icon wrapper for the confirmation dialog */
-const DialogIcon = memo(function DialogIcon({ className }: { className: string }) {
   return (
     <div
-      className={cn(
-        'mx-auto mb-4 w-12 h-12 rounded-full flex items-center justify-center',
-        className
-      )}
+      className="fixed inset-0 z-[1000] flex items-center justify-center"
+      onClick={(e) => e.target === e.currentTarget && handleCancel()}
     >
-      <AlertTriangle size={24} />
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" />
+
+      {/* Dialog */}
+      <div
+        ref={dialogRef}
+        style={{ width: 'calc(100% - 48px)', maxWidth: '320px' }}
+        className={cn(
+          'relative',
+          'bg-[var(--color-surface)]',
+          'rounded-2xl',
+          'shadow-2xl',
+          'animate-in zoom-in-95 fade-in duration-200',
+          'overflow-hidden'
+        )}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="confirm-dialog-title"
+        aria-describedby="confirm-dialog-message"
+      >
+        {/* Content */}
+        <div className="pt-6 pb-5 px-5 flex flex-col items-center text-center">
+          {/* Icon */}
+          <div
+            className={cn(
+              'mb-4 w-12 h-12 rounded-xl',
+              'flex items-center justify-center',
+              config.iconBg
+            )}
+          >
+            <IconComponent size={24} className={config.iconColor} strokeWidth={2} />
+          </div>
+
+          {/* Title */}
+          <h3
+            id="confirm-dialog-title"
+            className="text-lg font-semibold text-[var(--color-text)] mb-2"
+          >
+            {title}
+          </h3>
+
+          {/* Message */}
+          <p
+            id="confirm-dialog-message"
+            className="text-sm text-[var(--color-text-secondary)] leading-relaxed max-w-[280px]"
+          >
+            {message}
+          </p>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-3 px-5 pb-5">
+          <button
+            type="button"
+            onClick={handleCancel}
+            className={cn(
+              'flex-1 h-12 rounded-xl',
+              'text-[15px] font-medium',
+              'text-[var(--color-text)]',
+              'bg-[var(--color-bg-muted)]',
+              'hover:bg-[var(--color-surface-hover)]',
+              'active:scale-[0.98]',
+              'transition-all duration-150'
+            )}
+          >
+            {cancelLabel}
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            className={cn(
+              'flex-1 h-12 rounded-xl',
+              'text-[15px] font-semibold text-white',
+              config.buttonBg,
+              'active:scale-[0.98]',
+              'transition-all duration-150'
+            )}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
     </div>
   );
 });

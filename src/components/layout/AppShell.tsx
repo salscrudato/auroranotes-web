@@ -3,9 +3,9 @@
  * Manages cross-pane communication for note highlighting from chat citations.
  */
 
-import { useState, useCallback, useRef, useMemo, memo } from 'react';
+import { useState, useCallback, useRef, useMemo, useEffect, memo } from 'react';
 import { createPortal } from 'react-dom';
-import { Sparkles, FileText, LogOut, Plus, MessageSquare, Search } from 'lucide-react';
+import { Sparkles, FileText, LogOut, Plus, MessageSquare, Search, User } from 'lucide-react';
 import { useAuth, getUserInitials } from '../../auth';
 import { useToast } from '../common/useToast';
 import { ErrorBoundary } from '../common/ErrorBoundary';
@@ -17,6 +17,9 @@ import { SkipLink } from '../common/SkipLink';
 import { OfflineBanner } from '../common/OfflineBanner';
 import { CommandPalette, type CommandAction } from '../common/CommandPalette';
 import { useCommandPalette } from '../../hooks/useCommandPalette';
+import { MobileBottomNav } from './MobileBottomNav';
+import { createNote } from '../../lib/api';
+import { normalizeNote } from '../../lib/format';
 import type { Note } from '../../lib/types';
 
 type Tab = 'notes' | 'chat';
@@ -43,6 +46,8 @@ export function AppShell() {
   const notesComposerRef = useRef<HTMLTextAreaElement | null>(null);
   // Ref for profile avatar button for dropdown positioning
   const profileAvatarRef = useRef<HTMLButtonElement | null>(null);
+  // Ref for adding notes from mobile voice recording
+  const addNoteToListRef = useRef<((note: Note) => void) | null>(null);
 
   const handleSignOut = useCallback(async () => {
     try {
@@ -51,6 +56,16 @@ export function AppShell() {
       showToast('Failed to sign out', 'error');
     }
   }, [signOut, showToast]);
+
+  // Handle creating a voice note from mobile recording button
+  const handleCreateVoiceNote = useCallback(async (text: string) => {
+    const rawNote = await createNote(text);
+    const normalizedNote = normalizeNote(rawNote);
+    // Add to notes list immediately
+    addNoteToListRef.current?.(normalizedNote);
+    // Switch to notes tab to show the new note
+    setActiveTab('notes');
+  }, []);
 
   // Command palette actions
   const commandActions: CommandAction[] = useMemo(() => [
@@ -236,10 +251,24 @@ export function AppShell() {
                   }
                   setShowProfileMenu(!showProfileMenu);
                 }}
-                title={user?.displayName || user?.email || 'Account'}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    if (profileAvatarRef.current) {
+                      const rect = profileAvatarRef.current.getBoundingClientRect();
+                      setMenuPosition({
+                        top: rect.bottom + 12,
+                        right: window.innerWidth - rect.right,
+                      });
+                    }
+                    setShowProfileMenu(true);
+                  }
+                }}
+                title={user?.displayName || user?.email || user?.phoneNumber || 'Account'}
                 aria-label="Account menu"
                 aria-expanded={showProfileMenu}
-                aria-haspopup="true"
+                aria-haspopup="menu"
+                aria-controls="profile-dropdown-menu"
               >
                 {user?.photoURL ? (
                   <img
@@ -256,37 +285,12 @@ export function AppShell() {
               </button>
 
               {showProfileMenu && createPortal(
-                <>
-                  <div
-                    className="profile-menu-backdrop"
-                    onClick={() => setShowProfileMenu(false)}
-                  />
-                  <div
-                    className="profile-menu"
-                    role="menu"
-                    style={{
-                      top: menuPosition.top,
-                      right: menuPosition.right,
-                    }}
-                  >
-                    <div className="profile-menu-header">
-                      <span className="profile-menu-name">
-                        {user?.displayName || 'User'}
-                      </span>
-                      <span className="profile-menu-email">
-                        {user?.email || user?.phoneNumber || ''}
-                      </span>
-                    </div>
-                    <button
-                      className="profile-menu-item danger"
-                      onClick={handleSignOut}
-                      role="menuitem"
-                    >
-                      <LogOut size={16} />
-                      Sign Out
-                    </button>
-                  </div>
-                </>,
+                <ProfileDropdownMenu
+                  user={user}
+                  position={menuPosition}
+                  onSignOut={handleSignOut}
+                  onClose={() => setShowProfileMenu(false)}
+                />,
                 document.body
               )}
             </div>
@@ -301,6 +305,7 @@ export function AppShell() {
               highlightNoteId={highlightNoteId}
               onNoteHighlighted={handleNoteHighlighted}
               onNotesLoaded={handleNotesLoaded}
+              onRegisterAddNote={(addNote) => { addNoteToListRef.current = addNote; }}
             />
           </ErrorBoundary>
           <ErrorBoundary fallback={<PanelFallback title="Chat" onRetry={() => window.location.reload()} />}>
@@ -326,6 +331,13 @@ export function AppShell() {
           recentActionIds={commandPalette.recentActionIds}
           onActionExecuted={commandPalette.trackAction}
         />
+
+        {/* Mobile Bottom Navigation */}
+        <MobileBottomNav
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          onCreateNote={handleCreateVoiceNote}
+        />
       </div>
     </div>
   );
@@ -334,6 +346,114 @@ export function AppShell() {
 // ============================================================================
 // Sub-components
 // ============================================================================
+
+/** Profile dropdown menu with keyboard navigation */
+interface ProfileDropdownMenuProps {
+  user: ReturnType<typeof useAuth>['user'];
+  position: { top: number; right: number };
+  onSignOut: () => void;
+  onClose: () => void;
+}
+
+const ProfileDropdownMenu = memo(function ProfileDropdownMenu({
+  user,
+  position,
+  onSignOut,
+  onClose,
+}: ProfileDropdownMenuProps) {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const signOutRef = useRef<HTMLButtonElement>(null);
+
+  // Handle keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      } else if (e.key === 'Tab' && !e.shiftKey) {
+        // Trap focus within menu - if on sign out, close menu
+        if (document.activeElement === signOutRef.current) {
+          e.preventDefault();
+          onClose();
+        }
+      }
+    };
+
+    // Focus first interactive element
+    signOutRef.current?.focus();
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  // Close on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+
+    // Delay to prevent immediate close
+    const timeoutId = setTimeout(() => {
+      document.addEventListener('click', handleClickOutside);
+    }, 0);
+
+    return () => {
+      clearTimeout(timeoutId);
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, [onClose]);
+
+  return (
+    <>
+      <div
+        className="profile-menu-backdrop"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div
+        ref={menuRef}
+        id="profile-dropdown-menu"
+        className="profile-menu"
+        role="menu"
+        aria-label="Account options"
+        style={{
+          top: position.top,
+          right: position.right,
+        }}
+      >
+        <div className="profile-menu-header">
+          <div className="profile-menu-avatar">
+            {user?.photoURL ? (
+              <img src={user.photoURL} alt="" referrerPolicy="no-referrer" />
+            ) : (
+              <User size={20} />
+            )}
+          </div>
+          <div className="profile-menu-info">
+            <span className="profile-menu-name">
+              {user?.displayName || 'User'}
+            </span>
+            <span className="profile-menu-email">
+              {user?.email || user?.phoneNumber || ''}
+            </span>
+          </div>
+        </div>
+        <div className="profile-menu-divider" />
+        <button
+          ref={signOutRef}
+          className="profile-menu-item danger"
+          onClick={onSignOut}
+          role="menuitem"
+        >
+          <LogOut size={16} aria-hidden="true" />
+          <span>Sign Out</span>
+        </button>
+      </div>
+    </>
+  );
+});
 
 /** Loading overlay when searching for a note */
 const SearchingOverlay = memo(function SearchingOverlay({ visible }: { visible: boolean }) {

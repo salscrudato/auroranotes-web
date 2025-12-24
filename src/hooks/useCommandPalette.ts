@@ -1,17 +1,18 @@
 /**
  * Hook to manage command palette state and keyboard shortcut
+ * Uses user-scoped storage to prevent cross-user data leakage
  */
 import { useState, useCallback, useEffect } from 'react';
+import { ScopedStorageKeys, getScopedItem, setScopedItem, getStorageUserId } from '../lib/scopedStorage';
 
-const RECENT_ACTIONS_KEY = 'auroranotes:recent-actions';
 const MAX_RECENT_ACTIONS = 5;
 
 export function useCommandPalette() {
   const [isOpen, setIsOpen] = useState(false);
   const [recentActionIds, setRecentActionIds] = useState<string[]>(() => {
+    if (!getStorageUserId()) return [];
     try {
-      const stored = localStorage.getItem(RECENT_ACTIONS_KEY);
-      return stored ? JSON.parse(stored) : [];
+      return getScopedItem<string[]>(ScopedStorageKeys.recentActions()) || [];
     } catch {
       return [];
     }
@@ -28,11 +29,13 @@ export function useCommandPalette() {
       const filtered = prev.filter((id) => id !== actionId);
       const updated = [actionId, ...filtered].slice(0, MAX_RECENT_ACTIONS);
 
-      // Persist to localStorage
-      try {
-        localStorage.setItem(RECENT_ACTIONS_KEY, JSON.stringify(updated));
-      } catch {
-        // Ignore localStorage errors
+      // Persist to user-scoped localStorage
+      if (getStorageUserId()) {
+        try {
+          setScopedItem(ScopedStorageKeys.recentActions(), updated);
+        } catch {
+          // Ignore localStorage errors
+        }
       }
 
       return updated;

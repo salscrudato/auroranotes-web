@@ -42,6 +42,10 @@ import { API, NOTES, CHAT } from './constants';
 type TokenGetter = () => Promise<string | null>;
 let tokenGetter: TokenGetter | null = null;
 
+/** Callback for 401 errors - triggers sign out */
+type UnauthorizedCallback = () => void;
+let onUnauthorized: UnauthorizedCallback | null = null;
+
 function getApiBase(): string {
   return (import.meta.env['VITE_API_BASE'] as string) || '';
 }
@@ -52,6 +56,14 @@ function getApiBase(): string {
  */
 export function setTokenGetter(getter: TokenGetter): void {
   tokenGetter = getter;
+}
+
+/**
+ * Set the callback for 401 unauthorized errors
+ * This should be called once at app initialization to handle session expiry
+ */
+export function setUnauthorizedCallback(callback: UnauthorizedCallback): void {
+  onUnauthorized = callback;
 }
 
 /**
@@ -297,6 +309,12 @@ async function singleRequest<T>(
       // Log error with request ID for debugging
       if (requestId) {
         console.error(`API Error [${requestId}]:`, body);
+      }
+
+      // Handle 401 unauthorized - trigger sign out
+      if (res.status === 401 && onUnauthorized) {
+        console.warn('[API] 401 Unauthorized - triggering sign out');
+        onUnauthorized();
       }
 
       throw error;

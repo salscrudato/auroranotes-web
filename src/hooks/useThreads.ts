@@ -1,11 +1,11 @@
 /**
  * useThreads hook - TanStack Query wrapper for thread operations
  * Handles chat thread persistence with localStorage fallback
+ * Uses user-scoped storage to prevent cross-user data leakage
  */
 
 import { useQuery, useMutation, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../lib/queryClient';
-import { STORAGE_KEYS } from '../lib/constants';
 import {
   listThreads,
   getThread,
@@ -16,6 +16,7 @@ import {
 } from '../lib/api';
 import type { ThreadDetail, ChatMessage } from '../lib/types';
 import { useState, useCallback, useEffect } from 'react';
+import { ScopedStorageKeys, getScopedItem, setScopedItem, getStorageUserId } from '../lib/scopedStorage';
 
 // Local storage fallback for threads when API is unavailable
 interface LocalThread {
@@ -27,17 +28,20 @@ interface LocalThread {
 }
 
 function loadLocalThreads(): LocalThread[] {
+  // Only load if we have a user
+  if (!getStorageUserId()) return [];
   try {
-    const stored = localStorage.getItem(STORAGE_KEYS.CHAT_HISTORY + '-threads');
-    return stored ? JSON.parse(stored) : [];
+    return getScopedItem<LocalThread[]>(ScopedStorageKeys.chatHistoryThreads()) || [];
   } catch {
     return [];
   }
 }
 
 function saveLocalThreads(threads: LocalThread[]): void {
+  // Only save if we have a user
+  if (!getStorageUserId()) return;
   try {
-    localStorage.setItem(STORAGE_KEYS.CHAT_HISTORY + '-threads', JSON.stringify(threads));
+    setScopedItem(ScopedStorageKeys.chatHistoryThreads(), threads);
   } catch {
     // Ignore storage errors
   }

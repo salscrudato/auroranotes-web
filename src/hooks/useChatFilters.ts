@@ -1,28 +1,30 @@
 /**
  * useChatFilters hook - Manage chat context filters
  * Controls which notes are included in chat context
+ * Uses user-scoped storage to prevent cross-user data leakage
  */
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { STORAGE_KEYS } from '../lib/constants';
 import type { ChatFilters, ChatFilterMode, Note } from '../lib/types';
+import { ScopedStorageKeys, getScopedItem, setScopedItem, getStorageUserId } from '../lib/scopedStorage';
 
 const DEFAULT_FILTERS: ChatFilters = {
   mode: 'all',
 };
 
 function loadFilters(): ChatFilters {
+  if (!getStorageUserId()) return DEFAULT_FILTERS;
   try {
-    const stored = localStorage.getItem(STORAGE_KEYS.CHAT_FILTERS);
-    return stored ? JSON.parse(stored) : DEFAULT_FILTERS;
+    return getScopedItem<ChatFilters>(ScopedStorageKeys.chatFilters()) || DEFAULT_FILTERS;
   } catch {
     return DEFAULT_FILTERS;
   }
 }
 
 function persistFilters(filters: ChatFilters): void {
+  if (!getStorageUserId()) return;
   try {
-    localStorage.setItem(STORAGE_KEYS.CHAT_FILTERS, JSON.stringify(filters));
+    setScopedItem(ScopedStorageKeys.chatFilters(), filters);
   } catch {
     // Ignore storage errors
   }

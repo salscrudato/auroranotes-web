@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
   getFirebaseAuth,
@@ -10,6 +10,9 @@ import {
   type User,
 } from '../lib/firebase';
 import { AuthContext, type AuthUser, type AuthError, type AuthContextValue } from './useAuth';
+import { setStorageUserId, clearAllAuroraStorage } from '../lib/scopedStorage';
+import { queryClient } from '../lib/queryClient';
+import { setUnauthorizedCallback } from '../lib/api';
 
 const toAuthUser = (user: User): AuthUser => ({
   uid: user.uid,
@@ -34,7 +37,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsubscribe = onAuthStateChanged(
       getFirebaseAuth(),
       (firebaseUser) => {
-        setUser(firebaseUser ? toAuthUser(firebaseUser) : null);
+        const authUser = firebaseUser ? toAuthUser(firebaseUser) : null;
+        // Set storage user ID for scoped localStorage
+        setStorageUserId(authUser?.uid ?? null);
+        setUser(authUser);
         setLoading(false);
       },
       (err) => {
@@ -84,6 +90,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     setError(null);
     try {
+      // Clear all user-scoped localStorage data
+      clearAllAuroraStorage();
+      // Clear storage user ID
+      setStorageUserId(null);
+      // Reset TanStack Query cache to prevent data leakage
+      queryClient.clear();
+      // Sign out from Firebase
       await firebaseSignOut();
       setPhoneVerificationPending(false);
     } catch (err) {
@@ -91,6 +104,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw err;
     }
   }, []);
+
+  // Track if we've already handled a 401 to prevent multiple sign-outs
+  const handlingUnauthorized = useRef(false);
+
+  // Set up 401 unauthorized callback to trigger sign out
+  useEffect(() => {
+    setUnauthorizedCallback(() => {
+      // Prevent multiple simultaneous sign-out attempts
+      if (handlingUnauthorized.current) return;
+      handlingUnauthorized.current = true;
+
+      // Only sign out if user is currently authenticated
+      if (user) {
+        console.warn('[Auth] Session expired - signing out');
+        signOut().finally(() => {
+          handlingUnauthorized.current = false;
+        });
+      } else {
+        handlingUnauthorized.current = false;
+      }
+    });
+  }, [user, signOut]);
 
   const clearError = useCallback(() => setError(null), []);
 

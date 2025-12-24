@@ -1,6 +1,6 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { ArrowUp, FileText, ListChecks, HelpCircle, CheckSquare, Square, Clock, Sparkles, Mic } from 'lucide-react';
-import type { ChatMessage as ChatMessageType, Source, FeedbackRating, QueryIntent } from '@/lib/types';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { ArrowUp, Square, Clock, Sparkles, Mic } from 'lucide-react';
+import type { ChatMessage as ChatMessageType, Source, FeedbackRating } from '@/lib/types';
 import { useChat } from '@/hooks/useChat';
 import { useSpeechToText } from '@/hooks/useSpeechToText';
 import { submitFeedback, ApiRequestError } from '@/lib/api';
@@ -15,28 +15,6 @@ interface ChatPanelProps {
 }
 
 const MAX_MESSAGE_LENGTH = 2000;
-
-const SUGGESTIONS = [
-  { label: 'Summarize my notes', prompt: 'Summarize my recent notes from this week', Icon: FileText },
-  { label: 'What decisions did I make?', prompt: 'What decisions did I make recently?', Icon: ListChecks },
-  { label: 'Open questions', prompt: 'What are my open questions or unresolved items?', Icon: HelpCircle },
-  { label: 'Find action items', prompt: 'List action items from my notes', Icon: CheckSquare },
-] as const;
-
-const FOLLOW_UP_SUGGESTIONS: Record<QueryIntent, string[]> = {
-  summarize: ['Tell me more about a specific topic', 'What are the key takeaways?', 'Any action items from this?'],
-  list: ['Expand on the first item', 'Which is most important?', 'Are there any I missed?'],
-  decision: ['What led to this decision?', 'Are there alternatives?', 'What are the next steps?'],
-  action_item: ['Which should I prioritize?', 'Any deadlines mentioned?', 'Who is responsible for each?'],
-  search: ['Tell me more about this', 'When did I write about this?', 'Related topics?'],
-  question: ['Can you elaborate?', 'What sources support this?', 'Any related notes?'],
-};
-
-function getFollowUpSuggestions(intent?: QueryIntent, sourceCount?: number): string[] {
-  if (!intent) return [];
-  const base = FOLLOW_UP_SUGGESTIONS[intent] || [];
-  return sourceCount ? [...base.slice(0, 2), 'Show me the original notes'] : base;
-}
 
 export function ChatPanel({ className = '', onOpenNote }: ChatPanelProps) {
   const { messages, loadingState, sendMessage, retryLastMessage, clearChat, cancelStream } = useChat({ streaming: true });
@@ -83,7 +61,11 @@ export function ChatPanel({ className = '', onOpenNote }: ChatPanelProps) {
   }, [recordingState, voiceTranscript, cancelRecording]);
 
   const handleMicClick = useCallback(() => {
-    isRecording ? stopRecording() : startRecording();
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
   }, [isRecording, startRecording, stopRecording]);
 
   useEffect(() => () => { if (countdownRef.current) clearInterval(countdownRef.current); }, []);
@@ -116,11 +98,6 @@ export function ChatPanel({ className = '', onOpenNote }: ChatPanelProps) {
     setActiveSources(sources);
   }, [messages]);
 
-  const followUpSuggestions = useMemo(() => {
-    const last = [...messages].reverse().find(m => m.role === 'assistant' && !m.isError && !m.isStreaming);
-    return last?.meta ? getFollowUpSuggestions(last.meta.intent, last.meta.sourceCount) : [];
-  }, [messages]);
-
   const handleSend = useCallback(async (text?: string) => {
     const messageText = (text || input).trim();
     if (!messageText || isLoading || rateLimitCountdown !== null) return;
@@ -143,10 +120,6 @@ export function ChatPanel({ className = '', onOpenNote }: ChatPanelProps) {
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
-  }, [handleSend]);
-
-  const handleSuggestionClick = useCallback((prompt: string) => {
-    handleSend(prompt);
   }, [handleSend]);
 
   const handleSourceClick = useCallback((source: Source) => {
@@ -221,23 +194,6 @@ export function ChatPanel({ className = '', onOpenNote }: ChatPanelProps) {
     <div className={`panel panel-chat ${className}`}>
       <div className="panel-body chat-panel-body">
         <div className="chat-container">
-          {/* Suggestion Chips */}
-          {messages.length === 0 && (
-            <div className="chat-suggestions stagger-children">
-              {SUGGESTIONS.map((suggestion) => (
-                <button
-                  key={suggestion.prompt}
-                  className="suggestion-chip"
-                  onClick={() => handleSuggestionClick(suggestion.prompt)}
-                  disabled={isLoading}
-                >
-                  <suggestion.Icon size={15} className="suggestion-icon" />
-                  <span>{suggestion.label}</span>
-                </button>
-              ))}
-            </div>
-          )}
-
           {/* Messages Area */}
           <div
             ref={messagesContainerRef}
@@ -284,8 +240,6 @@ export function ChatPanel({ className = '', onOpenNote }: ChatPanelProps) {
                     {...(message.isError && isLastMessage && { onRetry: handleRetry })}
                     {...feedbackStateProps}
                     isLastMessage={isLastMessage}
-                    {...(isLastMessage && followUpSuggestions.length > 0 && { suggestedQuestions: followUpSuggestions })}
-                    {...(isLastMessage && { onSuggestedQuestion: handleSend })}
                     {...(onOpenNote && { onNoteClick: onOpenNote })}
                   />
                 );

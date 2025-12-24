@@ -1,23 +1,25 @@
 /**
  * usePinnedNotes hook - Local storage-based note pinning
+ * Uses user-scoped storage to prevent cross-user data leakage
  */
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { STORAGE_KEYS } from '../lib/constants';
 import type { PinnedNote, Note } from '../lib/types';
+import { ScopedStorageKeys, getScopedItem, setScopedItem, getStorageUserId } from '../lib/scopedStorage';
 
 function loadPinnedNotes(): PinnedNote[] {
+  if (!getStorageUserId()) return [];
   try {
-    const stored = localStorage.getItem(STORAGE_KEYS.PINNED_NOTES);
-    return stored ? JSON.parse(stored) : [];
+    return getScopedItem<PinnedNote[]>(ScopedStorageKeys.pinnedNotes()) || [];
   } catch {
     return [];
   }
 }
 
 function persistPinnedNotes(pinned: PinnedNote[]): void {
+  if (!getStorageUserId()) return;
   try {
-    localStorage.setItem(STORAGE_KEYS.PINNED_NOTES, JSON.stringify(pinned));
+    setScopedItem(ScopedStorageKeys.pinnedNotes(), pinned);
   } catch {
     // Ignore storage errors
   }

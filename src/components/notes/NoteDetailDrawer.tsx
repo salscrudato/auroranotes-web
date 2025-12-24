@@ -3,11 +3,11 @@
  * Supports viewing, editing, tags display, and pinning.
  */
 
-import { useEffect, useCallback, useState, useMemo, memo } from 'react';
+import { useEffect, useCallback, useState, useMemo, memo, useRef } from 'react';
 import { FileText, X, Copy, Edit3, Pin, PinOff, Tag, Save, Trash2 } from 'lucide-react';
 import type { Note } from '../../lib/types';
 import { formatFullTimestamp, formatRelativeTime, shortId } from '../../lib/format';
-import { splitTextForHighlight, copyToClipboard, cn } from '../../lib/utils';
+import { splitTextForHighlight, copyToClipboard, cn, triggerHaptic } from '../../lib/utils';
 import { NOTES } from '../../lib/constants';
 import { useToast } from '../common/useToast';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
@@ -42,12 +42,48 @@ export const NoteDetailDrawer = memo(function NoteDetailDrawer({
   const [editTags, setEditTags] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Swipe-to-dismiss state for mobile
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const touchStartRef = useRef<{ y: number; time: number } | null>(null);
+
   // useFocusTrap handles focus trapping, escape key, and restoration automatically
   const drawerRef = useFocusTrap<HTMLDivElement>({
     enabled: !!note,
     onEscape: isEditing ? () => setIsEditing(false) : onClose,
     restoreFocus: true,
   });
+
+  // Handle swipe-to-dismiss gesture (swipe down to close)
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (isEditing) return;
+    const touch = e.touches[0];
+    if (touch) {
+      touchStartRef.current = { y: touch.clientY, time: Date.now() };
+      setIsDragging(true);
+    }
+  }, [isEditing]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!touchStartRef.current || isEditing) return;
+    const touch = e.touches[0];
+    if (!touch) return;
+    const deltaY = Math.max(0, touch.clientY - touchStartRef.current.y);
+    setSwipeOffset(deltaY * 0.6); // Apply resistance
+  }, [isEditing]);
+
+  const handleTouchEnd = useCallback(() => {
+    if (!touchStartRef.current) return;
+    setIsDragging(false);
+
+    const shouldDismiss = swipeOffset > 100; // Threshold to dismiss
+    if (shouldDismiss) {
+      triggerHaptic('light');
+      onClose();
+    }
+    setSwipeOffset(0);
+    touchStartRef.current = null;
+  }, [swipeOffset, onClose]);
 
   // Reset edit state when note changes
   useEffect(() => {
@@ -105,15 +141,9 @@ export const NoteDetailDrawer = memo(function NoteDetailDrawer({
     }
   }, [onClose]);
 
-  if (!note) return null;
-
-  const displayId = shortId(note.id);
-  const relativeTime = note.createdAt ? formatRelativeTime(note.createdAt) : '';
-  const fullTime = note.createdAt ? formatFullTimestamp(note.createdAt) : '';
-  const pinned = isPinned(note.id);
-
-  // Memoized highlighted text
+  // Memoized highlighted text (must be before early return to satisfy hooks rules)
   const highlightedContent = useMemo(() => {
+    if (!note) return null;
     const parts = splitTextForHighlight(note.text, highlightText || '');
     return (
       <div className="note-detail-text whitespace-pre-wrap">
@@ -126,17 +156,38 @@ export const NoteDetailDrawer = memo(function NoteDetailDrawer({
         )}
       </div>
     );
-  }, [note.text, highlightText]);
+  }, [note, highlightText]);
+
+  if (!note) return null;
+
+  const displayId = shortId(note.id);
+  const relativeTime = note.createdAt ? formatRelativeTime(note.createdAt) : '';
+  const fullTime = note.createdAt ? formatFullTimestamp(note.createdAt) : '';
+  const pinned = isPinned(note.id);
 
   return (
     <div className="note-drawer-backdrop" onClick={handleBackdropClick}>
       <div
         ref={drawerRef}
-        className={cn('note-drawer', 'flex flex-col max-h-[90vh]')}
+        className={cn(
+          'note-drawer',
+          'flex flex-col max-h-[90vh]',
+          isDragging && 'no-transition'
+        )}
         role="dialog"
         aria-modal="true"
         aria-labelledby="note-drawer-title"
+        style={{
+          transform: swipeOffset > 0 ? `translateY(${swipeOffset}px)` : undefined,
+          opacity: swipeOffset > 0 ? Math.max(0.3, 1 - swipeOffset / 200) : undefined,
+        }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
       >
+        {/* Drag handle for mobile */}
+        <div className="drawer-handle" aria-hidden="true" />
+
         {/* Header */}
         <div className="note-drawer-header flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
           <div className="flex items-center gap-2">
