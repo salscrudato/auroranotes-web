@@ -43,7 +43,7 @@ type TokenGetter = () => Promise<string | null>;
 let tokenGetter: TokenGetter | null = null;
 
 function getApiBase(): string {
-  return (import.meta.env.VITE_API_BASE as string) || '';
+  return (import.meta.env['VITE_API_BASE'] as string) || '';
 }
 
 /**
@@ -131,17 +131,21 @@ function extractErrorInfo(
   }
 
   if (typeof body.error === 'string') {
-    return { message: body.error, code: body.code };
+    const result: { message: string; code?: string } = { message: body.error };
+    if (body.code) result.code = body.code;
+    return result;
   }
 
   if (typeof body.error === 'object' && body.error.message) {
-    return {
-      message: body.error.message,
-      code: body.code || body.error.code,
-    };
+    const result: { message: string; code?: string } = { message: body.error.message };
+    const code = body.code || body.error.code;
+    if (code) result.code = code;
+    return result;
   }
 
-  return { message: fallbackMessage, code: body.code };
+  const result: { message: string; code?: string } = { message: fallbackMessage };
+  if (body.code) result.code = body.code;
+  return result;
 }
 
 /**
@@ -162,10 +166,10 @@ export class ApiRequestError extends Error {
   ) {
     super(message);
     this.name = 'ApiRequestError';
-    this.status = status;
-    this.code = code;
-    this.retryAfterSeconds = retryAfterSeconds;
-    this.requestId = requestId;
+    if (status !== undefined) this.status = status;
+    if (code !== undefined) this.code = code;
+    if (retryAfterSeconds !== undefined) this.retryAfterSeconds = retryAfterSeconds;
+    if (requestId !== undefined) this.requestId = requestId;
   }
 
   /**
@@ -432,7 +436,7 @@ export async function listNotes(
   const path = `${API.ENDPOINTS.NOTES}?${params.toString()}`;
   const headers = await getAuthHeaders();
 
-  return await request<NotesListResponse>(path, { headers, signal });
+  return await request<NotesListResponse>(path, { headers, ...(signal && { signal }) });
 }
 
 /**
@@ -998,7 +1002,7 @@ export async function listThreads(
   const path = `${API.ENDPOINTS.THREADS}?${params.toString()}`;
   const headers = await getAuthHeaders();
 
-  return await request<ThreadsListResponse>(path, { headers, signal });
+  return await request<ThreadsListResponse>(path, { headers, ...(signal && { signal }) });
 }
 
 /**
@@ -1009,7 +1013,7 @@ export async function getThread(
   signal?: AbortSignal
 ): Promise<ThreadDetail> {
   const headers = await getAuthHeaders();
-  return await request<ThreadDetail>(`${API.ENDPOINTS.THREADS}/${threadId}`, { headers, signal });
+  return await request<ThreadDetail>(`${API.ENDPOINTS.THREADS}/${threadId}`, { headers, ...(signal && { signal }) });
 }
 
 /**
@@ -1080,7 +1084,7 @@ export async function sendThreadMessage(
     threadId,
   };
   if (filters) {
-    body.filters = filters;
+    body['filters'] = filters;
   }
 
   try {
@@ -1133,7 +1137,7 @@ export async function sendThreadMessage(
  */
 export async function listTags(signal?: AbortSignal): Promise<TagsListResponse> {
   const headers = await getAuthHeaders();
-  return await request<TagsListResponse>(API.ENDPOINTS.TAGS, { headers, signal });
+  return await request<TagsListResponse>(API.ENDPOINTS.TAGS, { headers, ...(signal && { signal }) });
 }
 
 // ============================================
@@ -1154,7 +1158,7 @@ export async function searchNotes(
       method: 'POST',
       headers,
       body: JSON.stringify(searchRequest),
-      signal,
+      ...(signal && { signal }),
     },
     API.TIMEOUTS.SEARCH
   );
@@ -1165,7 +1169,7 @@ export async function searchNotes(
  */
 export async function getNote(noteId: string, signal?: AbortSignal): Promise<RawNote> {
   const headers = await getAuthHeaders();
-  return await request<RawNote>(`${API.ENDPOINTS.NOTES}/${noteId}`, { headers, signal });
+  return await request<RawNote>(`${API.ENDPOINTS.NOTES}/${noteId}`, { headers, ...(signal && { signal }) });
 }
 
 /**

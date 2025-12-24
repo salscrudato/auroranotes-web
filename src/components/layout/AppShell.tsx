@@ -1,10 +1,9 @@
 /**
- * AppShell component
- * Main layout with header, responsive grid, and mobile tabs
- * Manages cross-pane communication for note highlighting from chat citations
+ * Main app layout with header, responsive grid, and mobile tabs.
+ * Manages cross-pane communication for note highlighting from chat citations.
  */
 
-import { useState, useCallback, useRef, useMemo } from 'react';
+import { useState, useCallback, useRef, useMemo, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { Sparkles, FileText, LogOut, Plus, MessageSquare, Search } from 'lucide-react';
 import { useAuth, getUserInitials } from '../../auth';
@@ -22,7 +21,6 @@ import type { Note } from '../../lib/types';
 
 type Tab = 'notes' | 'chat';
 
-// Maximum pages to search when looking for a note
 const MAX_SEARCH_PAGES = 10;
 
 export function AppShell() {
@@ -313,23 +311,14 @@ export function AppShell() {
           </ErrorBoundary>
         </main>
 
-        {/* Loading overlay when searching for note */}
-        {searchingForNote && (
-          <div className="searching-note-overlay">
-            <div className="searching-note-content">
-              <span className="spinner" />
-              <span>Finding note...</span>
-            </div>
-          </div>
-        )}
+        <SearchingOverlay visible={searchingForNote} />
 
         <NoteDetailDrawer
           note={drawerNote}
           onClose={handleCloseDrawer}
-          highlightText={drawerHighlight}
+          {...(drawerHighlight && { highlightText: drawerHighlight })}
         />
 
-        {/* Command Palette (Cmd/Ctrl+K) */}
         <CommandPalette
           isOpen={commandPalette.isOpen}
           onClose={commandPalette.close}
@@ -342,3 +331,20 @@ export function AppShell() {
   );
 }
 
+// ============================================================================
+// Sub-components
+// ============================================================================
+
+/** Loading overlay when searching for a note */
+const SearchingOverlay = memo(function SearchingOverlay({ visible }: { visible: boolean }) {
+  if (!visible) return null;
+
+  return (
+    <div className="searching-note-overlay">
+      <div className="searching-note-content">
+        <span className="spinner" />
+        <span>Finding note...</span>
+      </div>
+    </div>
+  );
+});

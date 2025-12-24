@@ -1,20 +1,17 @@
 /**
- * VoicePreviewBar component
- * Displays audio preview with playback controls, editable transcript, and action buttons
+ * Audio preview bar with playback controls, editable transcript, and action buttons.
  */
 
+import { memo } from 'react';
 import { Play, Pause, Check, X, Sparkles, AlertTriangle, RotateCcw } from 'lucide-react';
 import { formatTime } from '../../lib/utils';
 
 interface VoicePreviewBarProps {
-  // Playback state
   isPlaying: boolean;
   currentTime: number;
   duration: number;
   onPlay: () => void;
   onPause: () => void;
-  
-  // Transcript state
   transcript: string;
   rawTranscript: string;
   isEnhancing: boolean;
@@ -22,13 +19,11 @@ interface VoicePreviewBarProps {
   onTranscriptChange: (text: string) => void;
   onSkipEnhancement: () => void;
   onEnhanceNow: () => void;
-  
-  // Actions
   onConfirm: () => void;
   onCancel: () => void;
 }
 
-export function VoicePreviewBar({
+export const VoicePreviewBar = memo(function VoicePreviewBar({
   isPlaying,
   currentTime,
   duration,
@@ -159,5 +154,4 @@ export function VoicePreviewBar({
       </div>
     </div>
   );
-}
-
+});

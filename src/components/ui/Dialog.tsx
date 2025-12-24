@@ -1,9 +1,8 @@
 /**
- * Dialog component - Tailwind-based UI primitive
- * Modal dialog with backdrop, accessible focus management
+ * Modal dialog with backdrop and accessible focus management.
  */
 
-import { forwardRef, type HTMLAttributes, type ReactNode, useCallback } from 'react';
+import { forwardRef, type HTMLAttributes, type ReactNode, useCallback, memo } from 'react';
 import { X } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { IconButton } from './IconButton';
@@ -63,7 +62,7 @@ export interface DialogCloseProps {
   onClose: () => void;
 }
 
-export function DialogClose({ onClose }: DialogCloseProps) {
+export const DialogClose = memo(function DialogClose({ onClose }: DialogCloseProps) {
   return (
     <IconButton
       variant="ghost"
@@ -75,7 +74,7 @@ export function DialogClose({ onClose }: DialogCloseProps) {
       <X size={18} />
     </IconButton>
   );
-}
+});
 
 /** Dialog Header */
 export interface DialogHeaderProps extends HTMLAttributes<HTMLDivElement> {

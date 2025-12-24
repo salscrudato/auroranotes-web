@@ -1,9 +1,9 @@
 /**
- * VirtualNotesList component - Virtualized notes list for large datasets
- * Uses @tanstack/react-virtual for efficient rendering of 100k+ notes
+ * Virtualized notes list for efficient rendering of 100k+ notes.
+ * Uses @tanstack/react-virtual.
  */
 
-import { useRef, useCallback, useMemo } from 'react';
+import { useRef, useCallback, useMemo, memo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Note } from '../../lib/types';
 import { groupNotesByDate } from '../../lib/format';
@@ -36,7 +36,7 @@ type VirtualRow =
   | { type: 'loading-more' }
   | { type: 'load-more-button' };
 
-export function VirtualNotesList({
+export const VirtualNotesList = memo(function VirtualNotesList({
   notes,
   pinnedNotes,
   loading = false,
@@ -87,16 +87,18 @@ export function VirtualNotesList({
   // Estimate row heights
   const estimateSize = useCallback((index: number): number => {
     const row = rows[index];
+    if (!row) return 100;
     switch (row.type) {
       case 'pinned-header':
       case 'group-header':
         return 40; // Header height
       case 'pinned-note':
-      case 'note':
+      case 'note': {
         // Estimate based on text length
         const text = row.note.text;
         const lines = Math.ceil(text.length / 80); // ~80 chars per line
         return Math.min(Math.max(80, lines * 24 + 60), 200); // Min 80, max 200
+      }
       case 'loading-more':
       case 'load-more-button':
         return 48;
@@ -151,6 +153,62 @@ export function VirtualNotesList({
       >
         {virtualizer.getVirtualItems().map((virtualRow) => {
           const row = rows[virtualRow.index];
+          if (!row) return null;
+
+          const renderContent = () => {
+            switch (row.type) {
+              case 'pinned-header':
+                return (
+                  <div className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-[var(--color-text-secondary)] sticky top-0 bg-[var(--color-bg)]/95 backdrop-blur-sm z-10">
+                    <Pin size={14} className="text-[var(--color-primary)]" />
+                    Pinned
+                  </div>
+                );
+              case 'group-header':
+                return (
+                  <div className="notes-group-header px-3 py-2 text-sm font-medium text-[var(--color-text-secondary)] sticky top-0 bg-[var(--color-bg)]/95 backdrop-blur-sm z-10">
+                    {row.group}
+                  </div>
+                );
+              case 'note':
+              case 'pinned-note':
+                return (
+                  <div
+                    ref={row.note.id === highlightNoteId ? highlightRef : undefined}
+                    className="px-2"
+                    onClick={onNoteClick ? () => onNoteClick(row.note) : undefined}
+                  >
+                    <NoteCard
+                      note={row.note}
+                      isPending={row.note.id.startsWith('temp-')}
+                      isHighlighted={row.note.id === highlightNoteId}
+                      {...(searchQuery && { searchQuery })}
+                      {...(onEdit && { onEdit })}
+                      {...(onDelete && { onDelete })}
+                    />
+                  </div>
+                );
+              case 'loading-more':
+                return (
+                  <div className="flex items-center justify-center gap-2 py-4 text-sm text-[var(--color-text-secondary)]">
+                    <span className="spinner" /> Loading more...
+                  </div>
+                );
+              case 'load-more-button':
+                return (
+                  <div className="px-3 py-2">
+                    <button
+                      className="w-full btn"
+                      onClick={onLoadMore}
+                    >
+                      Load more notes
+                    </button>
+                  </div>
+                );
+              default:
+                return null;
+            }
+          };
 
           return (
             <div
@@ -165,57 +223,11 @@ export function VirtualNotesList({
                 transform: `translateY(${virtualRow.start}px)`,
               }}
             >
-              {row.type === 'pinned-header' && (
-                <div className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-[var(--color-text-secondary)] sticky top-0 bg-[var(--color-bg)]/95 backdrop-blur-sm z-10">
-                  <Pin size={14} className="text-[var(--color-primary)]" />
-                  Pinned
-                </div>
-              )}
-
-              {row.type === 'group-header' && (
-                <div className="notes-group-header px-3 py-2 text-sm font-medium text-[var(--color-text-secondary)] sticky top-0 bg-[var(--color-bg)]/95 backdrop-blur-sm z-10">
-                  {row.group}
-                </div>
-              )}
-
-              {(row.type === 'note' || row.type === 'pinned-note') && (
-                <div
-                  ref={row.note.id === highlightNoteId ? highlightRef : undefined}
-                  className="px-2"
-                  onClick={onNoteClick ? () => onNoteClick(row.note) : undefined}
-                >
-                  <NoteCard
-                    note={row.note}
-                    isPending={row.note.id.startsWith('temp-')}
-                    isHighlighted={row.note.id === highlightNoteId}
-                    searchQuery={searchQuery}
-                    onEdit={onEdit}
-                    onDelete={onDelete}
-                  />
-                </div>
-              )}
-
-              {row.type === 'loading-more' && (
-                <div className="flex items-center justify-center gap-2 py-4 text-sm text-[var(--color-text-secondary)]">
-                  <span className="spinner" /> Loading more...
-                </div>
-              )}
-
-              {row.type === 'load-more-button' && (
-                <div className="px-3 py-2">
-                  <button
-                    className="w-full btn"
-                    onClick={onLoadMore}
-                  >
-                    Load more notes
-                  </button>
-                </div>
-              )}
+              {renderContent()}
             </div>
           );
         })}
       </div>
     </div>
   );
-}
-
+});

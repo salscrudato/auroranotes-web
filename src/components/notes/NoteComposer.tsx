@@ -15,8 +15,8 @@ import { VoicePreviewBar } from './VoicePreviewBar';
 
 export interface NoteComposerData {
   text: string;
-  title?: string;
-  tags?: string[];
+  title: string | undefined;
+  tags: string[] | undefined;
 }
 
 interface NoteComposerProps {

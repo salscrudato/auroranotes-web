@@ -1,11 +1,58 @@
-/**
- * ActionResult component
- * Displays results from agentic actions (create_note, set_reminder, search_notes, etc.)
- */
+import { memo, type ReactNode } from 'react';
+import { CheckCircle, XCircle, FileText, Bell, Search, List, AtSign, Calendar, type LucideIcon } from 'lucide-react';
+import type { ActionMeta } from '@/lib/types';
 
-import { memo } from 'react';
-import { CheckCircle, XCircle, FileText, Bell, Search, List, AtSign, Calendar } from 'lucide-react';
-import type { ActionMeta } from '../../lib/types';
+const pluralize = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
+
+const Header = ({ icon: Icon, title }: { icon: LucideIcon; title: string }) => (
+  <div className="action-result-header">
+    <Icon size={16} />
+    <span className="action-result-title">{title}</span>
+  </div>
+);
+
+const Empty = ({ icon: Icon, text }: { icon: LucideIcon; text: string }) => (
+  <div className="action-result action-result-empty">
+    <Icon size={16} />
+    <span>{text}</span>
+  </div>
+);
+
+const ResultWrapper = ({ children }: { children: ReactNode }) => (
+  <div className="action-result action-result-success">{children}</div>
+);
+
+interface ListItem {
+  noteId: string;
+  preview?: string;
+  context?: string;
+  date: string;
+}
+
+const ResultList = ({
+  items,
+  onNoteClick,
+}: {
+  items: ListItem[];
+  onNoteClick?: (noteId: string) => void;
+}) => (
+  <div className="action-result-list">
+    {items.slice(0, 5).map((item, idx) => (
+      <div key={idx} className="action-result-item">
+        <div className="action-result-item-preview">{item.preview ?? item.context}</div>
+        <div className="action-result-item-meta">
+          <span className="action-result-item-date">{item.date}</span>
+          {onNoteClick && (
+            <button className="action-result-link" onClick={() => onNoteClick(item.noteId)}>
+              View →
+            </button>
+          )}
+        </div>
+      </div>
+    ))}
+    {items.length > 5 && <div className="action-result-more">+{items.length - 5} more</div>}
+  </div>
+);
 
 interface ActionResultProps {
   action: ActionMeta;
@@ -24,128 +71,76 @@ export const ActionResult = memo(function ActionResult({ action, onNoteClick }: 
     );
   }
 
-  // Render different UI based on action type
   switch (type) {
-    case 'create_note':
-      if (!data.createdNote) return null;
+    case 'create_note': {
+      const note = data.createdNote;
+      if (!note) return null;
       return (
-        <div className="action-result action-result-success">
-          <div className="action-result-header">
-            <CheckCircle size={16} />
-            <span className="action-result-title">Note Created</span>
-          </div>
+        <ResultWrapper>
+          <Header icon={CheckCircle} title="Note Created" />
           <div className="action-result-content">
             <FileText size={14} />
             <div className="action-result-details">
-              {data.createdNote.title && (
-                <div className="action-result-note-title">{data.createdNote.title}</div>
-              )}
-              <div className="action-result-note-preview">{data.createdNote.text.slice(0, 100)}...</div>
+              {note.title && <div className="action-result-note-title">{note.title}</div>}
+              <div className="action-result-note-preview">{note.text.slice(0, 100)}...</div>
               {onNoteClick && (
-                <button
-                  className="action-result-link"
-                  onClick={() => onNoteClick(data.createdNote!.id)}
-                >
+                <button className="action-result-link" onClick={() => onNoteClick(note.id)}>
                   View note →
                 </button>
               )}
             </div>
           </div>
-        </div>
+        </ResultWrapper>
       );
+    }
 
-    case 'set_reminder':
-      if (!data.reminder) return null;
+    case 'set_reminder': {
+      const reminder = data.reminder;
+      if (!reminder) return null;
       return (
-        <div className="action-result action-result-success">
-          <div className="action-result-header">
-            <Bell size={16} />
-            <span className="action-result-title">Reminder Set</span>
-          </div>
+        <ResultWrapper>
+          <Header icon={Bell} title="Reminder Set" />
           <div className="action-result-content">
             <Calendar size={14} />
             <div className="action-result-details">
-              <div className="action-result-reminder-text">{data.reminder.text}</div>
-              <div className="action-result-reminder-due">
-                Due: {new Date(data.reminder.dueAt).toLocaleString()}
-              </div>
+              <div className="action-result-reminder-text">{reminder.text}</div>
+              <div className="action-result-reminder-due">Due: {new Date(reminder.dueAt).toLocaleString()}</div>
             </div>
           </div>
-        </div>
+        </ResultWrapper>
       );
+    }
 
-    case 'search_notes':
-      if (!data.searchResults || data.searchResults.length === 0) {
-        return (
-          <div className="action-result action-result-empty">
-            <Search size={16} />
-            <span>No notes found</span>
-          </div>
-        );
-      }
+    case 'search_notes': {
+      const results = data.searchResults;
+      if (!results?.length) return <Empty icon={Search} text="No notes found" />;
       return (
-        <div className="action-result action-result-success">
-          <div className="action-result-header">
-            <Search size={16} />
-            <span className="action-result-title">Found {data.searchResults.length} note{data.searchResults.length === 1 ? '' : 's'}</span>
-          </div>
-          <div className="action-result-list">
-            {data.searchResults.slice(0, 5).map((result, idx) => (
-              <div key={idx} className="action-result-item">
-                <div className="action-result-item-preview">{result.preview}</div>
-                <div className="action-result-item-meta">
-                  <span className="action-result-item-date">{result.date}</span>
-                  {onNoteClick && (
-                    <button
-                      className="action-result-link"
-                      onClick={() => onNoteClick(result.noteId)}
-                    >
-                      View →
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-            {data.searchResults.length > 5 && (
-              <div className="action-result-more">
-                +{data.searchResults.length - 5} more
-              </div>
-            )}
-          </div>
-        </div>
+        <ResultWrapper>
+          <Header icon={Search} title={`Found ${pluralize(results.length, 'note')}`} />
+          <ResultList items={results} {...(onNoteClick && { onNoteClick })} />
+        </ResultWrapper>
       );
+    }
 
     case 'summarize_period':
       if (!data.summary) return null;
       return (
-        <div className="action-result action-result-success">
-          <div className="action-result-header">
-            <FileText size={16} />
-            <span className="action-result-title">Summary</span>
-          </div>
+        <ResultWrapper>
+          <Header icon={FileText} title="Summary" />
           <div className="action-result-content">
             <div className="action-result-summary">{data.summary}</div>
           </div>
-        </div>
+        </ResultWrapper>
       );
 
-    case 'list_action_items':
-      if (!data.actionItems || data.actionItems.length === 0) {
-        return (
-          <div className="action-result action-result-empty">
-            <List size={16} />
-            <span>No action items found</span>
-          </div>
-        );
-      }
+    case 'list_action_items': {
+      const items = data.actionItems;
+      if (!items?.length) return <Empty icon={List} text="No action items found" />;
       return (
-        <div className="action-result action-result-success">
-          <div className="action-result-header">
-            <List size={16} />
-            <span className="action-result-title">{data.actionItems.length} Action Item{data.actionItems.length === 1 ? '' : 's'}</span>
-          </div>
+        <ResultWrapper>
+          <Header icon={List} title={pluralize(items.length, 'Action Item')} />
           <div className="action-result-list">
-            {data.actionItems.map((item, idx) => (
+            {items.map((item, idx) => (
               <div key={idx} className="action-result-item action-result-action-item">
                 <div className="action-result-item-text">
                   {item.status && <span className="action-item-status">[{item.status}]</span>}
@@ -154,52 +149,22 @@ export const ActionResult = memo(function ActionResult({ action, onNoteClick }: 
               </div>
             ))}
           </div>
-        </div>
+        </ResultWrapper>
       );
+    }
 
-    case 'find_mentions':
-      if (!data.mentions || data.mentions.length === 0) {
-        return (
-          <div className="action-result action-result-empty">
-            <AtSign size={16} />
-            <span>No mentions found</span>
-          </div>
-        );
-      }
+    case 'find_mentions': {
+      const mentions = data.mentions;
+      if (!mentions?.length) return <Empty icon={AtSign} text="No mentions found" />;
       return (
-        <div className="action-result action-result-success">
-          <div className="action-result-header">
-            <AtSign size={16} />
-            <span className="action-result-title">Found {data.mentions.length} mention{data.mentions.length === 1 ? '' : 's'}</span>
-          </div>
-          <div className="action-result-list">
-            {data.mentions.slice(0, 5).map((mention, idx) => (
-              <div key={idx} className="action-result-item">
-                <div className="action-result-item-preview">{mention.context}</div>
-                <div className="action-result-item-meta">
-                  <span className="action-result-item-date">{mention.date}</span>
-                  {onNoteClick && (
-                    <button
-                      className="action-result-link"
-                      onClick={() => onNoteClick(mention.noteId)}
-                    >
-                      View →
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-            {data.mentions.length > 5 && (
-              <div className="action-result-more">
-                +{data.mentions.length - 5} more
-              </div>
-            )}
-          </div>
-        </div>
+        <ResultWrapper>
+          <Header icon={AtSign} title={`Found ${pluralize(mentions.length, 'mention')}`} />
+          <ResultList items={mentions} {...(onNoteClick && { onNoteClick })} />
+        </ResultWrapper>
       );
+    }
 
     default:
       return null;
   }
 });
-

@@ -6,17 +6,14 @@
   "display": "standalone",
   "background_color": "#0f0f0f",
   "theme_color": "#dc2626",
-  "orientation": "portrait-primary",
   "icons": [
     {
       "src": "/favicon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any"
+      "purpose": "any maskable"
     }
   ],
   "categories": ["productivity", "utilities"],
-  "lang": "en-US",
-  "dir": "ltr"
+  "lang": "en-US"
 }
-

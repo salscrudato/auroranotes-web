@@ -1,52 +1,49 @@
 /**
- * Source/Citation chip components
- * Clickable inline chips that replace [1], [2] source tokens
- * Shows tooltip preview and triggers sources panel on click
+ * Citation chip components for displaying source references in chat messages.
+ * Renders clickable [1], [2] chips with tooltips that trigger source panel navigation.
  */
 
-import { useState, useRef, useEffect, memo, useCallback } from 'react';
+import { useState, useRef, useEffect, useMemo, memo } from 'react';
 import type { Source } from '../../lib/types';
 import { formatPreview } from '../../lib/citations';
 import { cn } from '../../lib/utils';
-
-// ============================================
-// New Source-based Components
-// ============================================
 
 interface SourceRefChipProps {
   source: Source;
   onClick: (source: Source) => void;
 }
 
-/**
- * Inline source reference chip with tooltip
- * Replaces [1], [2] tokens in chat messages
- */
+/** Inline source reference chip with hover tooltip. */
 export const SourceRefChip = memo(function SourceRefChip({ source, onClick }: SourceRefChipProps) {
   const [showTooltip, setShowTooltip] = useState(false);
-  const chipRef = useRef<HTMLButtonElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
 
-  // Position tooltip to avoid overflow
+  const preview = useMemo(() => formatPreview(source.preview, 100), [source.preview]);
+  const relevancePercent = useMemo(() => Math.round(source.relevance * 100), [source.relevance]);
+
+  // Reposition tooltip to stay within viewport
   useEffect(() => {
-    if (showTooltip && tooltipRef.current && chipRef.current) {
-      const tooltip = tooltipRef.current;
-      const viewportWidth = window.innerWidth;
+    if (!showTooltip || !tooltipRef.current) return;
 
-      tooltip.style.left = '50%';
-      tooltip.style.transform = 'translateX(-50%)';
+    const tooltip = tooltipRef.current;
+    const viewportWidth = window.innerWidth;
+    const rect = tooltip.getBoundingClientRect();
 
-      const tooltipRect = tooltip.getBoundingClientRect();
-      if (tooltipRect.right > viewportWidth - 8) {
-        tooltip.style.left = 'auto';
-        tooltip.style.right = '0';
-        tooltip.style.transform = 'none';
-      }
-      if (tooltipRect.left < 8) {
-        tooltip.style.left = '0';
-        tooltip.style.right = 'auto';
-        tooltip.style.transform = 'none';
-      }
+    // Reset to centered position
+    tooltip.style.left = '50%';
+    tooltip.style.right = 'auto';
+    tooltip.style.transform = 'translateX(-50%)';
+
+    // Adjust if overflowing right edge
+    if (rect.right > viewportWidth - 8) {
+      tooltip.style.left = 'auto';
+      tooltip.style.right = '0';
+      tooltip.style.transform = 'none';
+    }
+    // Adjust if overflowing left edge
+    else if (rect.left < 8) {
+      tooltip.style.left = '0';
+      tooltip.style.transform = 'none';
     }
   }, [showTooltip]);
 
@@ -56,24 +53,19 @@ export const SourceRefChip = memo(function SourceRefChip({ source, onClick }: So
     onClick(source);
   };
 
-  const preview = formatPreview(source.preview, 100);
-  const relevancePercent = Math.round(source.relevance * 100);
-
-  const handleMouseEnter = useCallback(() => setShowTooltip(true), []);
-  const handleMouseLeave = useCallback(() => setShowTooltip(false), []);
+  const showTip = () => setShowTooltip(true);
+  const hideTip = () => setShowTooltip(false);
 
   return (
     <span className="source-chip-wrapper">
       <button
-        ref={chipRef}
         className="source-ref-chip"
         onClick={handleClick}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-        onFocus={handleMouseEnter}
-        onBlur={handleMouseLeave}
+        onMouseEnter={showTip}
+        onMouseLeave={hideTip}
+        onFocus={showTip}
+        onBlur={hideTip}
         aria-label={`Source ${source.id}: ${preview}`}
-        title=""
       >
         [{source.id}]
       </button>
@@ -83,9 +75,7 @@ export const SourceRefChip = memo(function SourceRefChip({ source, onClick }: So
           <div className="source-tooltip-header">
             <span className="source-tooltip-badge">[{source.id}]</span>
             {source.relevance > 0 && (
-              <span className="source-tooltip-score">
-                {relevancePercent}% match
-              </span>
+              <span className="source-tooltip-score">{relevancePercent}% match</span>
             )}
           </div>
           <p className="source-tooltip-text">{preview}</p>
@@ -99,17 +89,15 @@ export const SourceRefChip = memo(function SourceRefChip({ source, onClick }: So
   );
 });
 
-/**
- * Small badge for source lists
- * variant="context" shows a muted style for context sources (not directly cited)
- */
 interface SourceBadgeProps {
   id: string;
   onClick: () => void;
   isActive?: boolean;
+  /** Use 'context' for sources that provided context but weren't directly cited */
   variant?: 'cited' | 'context';
 }
 
+/** Compact badge for source lists in the sources panel. */
 export const SourceBadge = memo(function SourceBadge({
   id,
   onClick,

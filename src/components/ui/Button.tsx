@@ -6,8 +6,10 @@
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { cn } from '../../lib/utils';
 
+export type ButtonVariant = 'default' | 'primary' | 'ghost' | 'danger';
+
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'default' | 'primary' | 'ghost' | 'danger';
+  variant?: ButtonVariant;
   children: ReactNode;
 }
 

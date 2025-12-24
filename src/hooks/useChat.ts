@@ -224,17 +224,17 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
         const isApiError = err instanceof ApiRequestError;
         // Update the streaming message to show error
         setMessages(prev =>
-          prev.map(m =>
-            m.id === assistantMessageId
-              ? {
-                  ...m,
-                  content: isApiError ? err.getUserMessage() : 'Something went wrong. Please try again.',
-                  isError: true,
-                  isStreaming: false,
-                  errorCode: isApiError ? err.status : undefined,
-                }
-              : m
-          )
+          prev.map((m): ChatMessage => {
+            if (m.id !== assistantMessageId) return m;
+            const updated: ChatMessage = {
+              ...m,
+              content: isApiError ? err.getUserMessage() : 'Something went wrong. Please try again.',
+              isError: true,
+              isStreaming: false,
+            };
+            if (isApiError && err.status !== undefined) updated.errorCode = err.status;
+            return updated;
+          })
         );
         streamingMessageIdRef.current = null;
         setLoadingState('error');
@@ -251,11 +251,11 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
           role: 'assistant',
           content: response.answer,
           sources: response.sources,
-          contextSources: response.contextSources,
           timestamp: new Date(),
           meta: response.meta,
-          action: response.meta?.action,  // Include action metadata if present
         };
+        if (response.contextSources) assistantMessage.contextSources = response.contextSources;
+        if (response.meta?.action) assistantMessage.action = response.meta.action;
 
         setMessages(prev => [...prev, assistantMessage]);
         setLoadingState('idle');
@@ -267,8 +267,8 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
           content: isApiError ? err.getUserMessage() : 'Something went wrong. Please try again.',
           timestamp: new Date(),
           isError: true,
-          errorCode: isApiError ? err.status : undefined,
         };
+        if (isApiError && err.status !== undefined) errorMessage.errorCode = err.status;
 
         setMessages(prev => [...prev, errorMessage]);
         setLoadingState('error');
@@ -281,7 +281,8 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
     // Find the last user message before the error
     let lastUserMessageIndex = -1;
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === 'user') {
+      const msg = messages[i];
+      if (msg && msg.role === 'user') {
         lastUserMessageIndex = i;
         break;
       }
@@ -289,6 +290,7 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
     if (lastUserMessageIndex === -1) return;
 
     const lastUserMessage = messages[lastUserMessageIndex];
+    if (!lastUserMessage) return;
 
     // Remove BOTH the error message AND the last user message
     // sendMessage will re-add the user message, avoiding duplicates

@@ -1,28 +1,13 @@
-/**
- * ChatPanel component
- * RAG-powered chat with inline source references, streaming support, and feedback
- */
-
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import {
-  ArrowUp,
-  FileText,
-  ListChecks,
-  HelpCircle,
-  CheckSquare,
-  Square,
-  Clock,
-  Sparkles,
-  Mic,
-} from 'lucide-react';
-import type { ChatMessage as ChatMessageType, Source, FeedbackRating, QueryIntent } from '../../lib/types';
-import { useChat } from '../../hooks/useChat';
-import { useSpeechToText } from '../../hooks/useSpeechToText';
-import { submitFeedback, ApiRequestError } from '../../lib/api';
-import { useToast } from '../common/useToast';
+import { ArrowUp, FileText, ListChecks, HelpCircle, CheckSquare, Square, Clock, Sparkles, Mic } from 'lucide-react';
+import type { ChatMessage as ChatMessageType, Source, FeedbackRating, QueryIntent } from '@/lib/types';
+import { useChat } from '@/hooks/useChat';
+import { useSpeechToText } from '@/hooks/useSpeechToText';
+import { submitFeedback, ApiRequestError } from '@/lib/api';
+import { useToast } from '@/components/common/useToast';
 import { ChatMessage, ChatMessageLoading } from './ChatMessage';
 import { SourcesPanel } from './SourcesPanel';
-import { ErrorBoundary } from '../common/ErrorBoundary';
+import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 
 interface ChatPanelProps {
   className?: string;
@@ -36,40 +21,26 @@ const SUGGESTIONS = [
   { label: 'What decisions did I make?', prompt: 'What decisions did I make recently?', Icon: ListChecks },
   { label: 'Open questions', prompt: 'What are my open questions or unresolved items?', Icon: HelpCircle },
   { label: 'Find action items', prompt: 'List action items from my notes', Icon: CheckSquare },
-];
+] as const;
 
-/** Generate follow-up suggestions based on the last response */
+const FOLLOW_UP_SUGGESTIONS: Record<QueryIntent, string[]> = {
+  summarize: ['Tell me more about a specific topic', 'What are the key takeaways?', 'Any action items from this?'],
+  list: ['Expand on the first item', 'Which is most important?', 'Are there any I missed?'],
+  decision: ['What led to this decision?', 'Are there alternatives?', 'What are the next steps?'],
+  action_item: ['Which should I prioritize?', 'Any deadlines mentioned?', 'Who is responsible for each?'],
+  search: ['Tell me more about this', 'When did I write about this?', 'Related topics?'],
+  question: ['Can you elaborate?', 'What sources support this?', 'Any related notes?'],
+};
+
 function getFollowUpSuggestions(intent?: QueryIntent, sourceCount?: number): string[] {
   if (!intent) return [];
-
-  const suggestions: Record<QueryIntent, string[]> = {
-    summarize: ['Tell me more about a specific topic', 'What are the key takeaways?', 'Any action items from this?'],
-    list: ['Expand on the first item', 'Which is most important?', 'Are there any I missed?'],
-    decision: ['What led to this decision?', 'Are there alternatives?', 'What are the next steps?'],
-    action_item: ['Which should I prioritize?', 'Any deadlines mentioned?', 'Who is responsible for each?'],
-    search: ['Tell me more about this', 'When did I write about this?', 'Related topics?'],
-    question: ['Can you elaborate?', 'What sources support this?', 'Any related notes?'],
-  };
-
-  const baseSuggestions = suggestions[intent] || [];
-
-  // Add source-based suggestion if we have sources
-  if (sourceCount && sourceCount > 0) {
-    return [...baseSuggestions.slice(0, 2), 'Show me the original notes'];
-  }
-
-  return baseSuggestions;
+  const base = FOLLOW_UP_SUGGESTIONS[intent] || [];
+  return sourceCount ? [...base.slice(0, 2), 'Show me the original notes'] : base;
 }
 
 export function ChatPanel({ className = '', onOpenNote }: ChatPanelProps) {
-  const {
-    messages,
-    loadingState,
-    sendMessage,
-    retryLastMessage,
-    clearChat,
-    cancelStream,
-  } = useChat({ streaming: true }); // Streaming SSE by default per API spec
+  const { messages, loadingState, sendMessage, retryLastMessage, clearChat, cancelStream } = useChat({ streaming: true });
+  const { showToast } = useToast();
 
   const [input, setInput] = useState('');
   const [showSources, setShowSources] = useState(false);
@@ -78,20 +49,17 @@ export function ChatPanel({ className = '', onOpenNote }: ChatPanelProps) {
   const [feedbackSent, setFeedbackSent] = useState<Set<string>>(new Set());
   const [rateLimitCountdown, setRateLimitCountdown] = useState<number | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
-  // Feedback comment state for thumbs-down
   const [feedbackCommentFor, setFeedbackCommentFor] = useState<string | null>(null);
   const [feedbackComment, setFeedbackComment] = useState('');
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const { showToast } = useToast();
 
   const isLoading = loadingState === 'sending' || loadingState === 'streaming';
 
-  // Speech-to-text for voice input (simplified - no preview mode, direct to input)
   const {
     state: recordingState,
     isSupported: isSpeechSupported,
@@ -100,56 +68,33 @@ export function ChatPanel({ className = '', onOpenNote }: ChatPanelProps) {
     cancelRecording,
     transcript: voiceTranscript,
   } = useSpeechToText({
-    onError: useCallback((errorMsg: string) => {
-      showToast(errorMsg, 'error');
-    }, [showToast]),
-    autoEnhance: false, // No enhancement needed for chat - just raw speech
+    onError: useCallback((msg: string) => showToast(msg, 'error'), [showToast]),
+    autoEnhance: false,
   });
 
   const isRecording = recordingState === 'recording';
 
-  // When recording stops, put transcript in input
   useEffect(() => {
     if (recordingState === 'preview' && voiceTranscript.trim()) {
       setInput(voiceTranscript.trim());
-      cancelRecording(); // Reset to idle
+      cancelRecording();
       inputRef.current?.focus();
     }
   }, [recordingState, voiceTranscript, cancelRecording]);
 
-  // Handle mic button click
   const handleMicClick = useCallback(() => {
-    if (isRecording) {
-      stopRecording();
-    } else {
-      startRecording();
-    }
+    isRecording ? stopRecording() : startRecording();
   }, [isRecording, startRecording, stopRecording]);
 
-  // Cleanup countdown interval on unmount
-  useEffect(() => {
-    return () => {
-      if (countdownRef.current) {
-        clearInterval(countdownRef.current);
-      }
-    };
-  }, []);
+  useEffect(() => () => { if (countdownRef.current) clearInterval(countdownRef.current); }, []);
 
-  // Start rate limit countdown
   const startRateLimitCountdown = useCallback((seconds: number) => {
     setRateLimitCountdown(seconds);
-
-    if (countdownRef.current) {
-      clearInterval(countdownRef.current);
-    }
-
+    if (countdownRef.current) clearInterval(countdownRef.current);
     countdownRef.current = setInterval(() => {
       setRateLimitCountdown(prev => {
         if (prev === null || prev <= 1) {
-          if (countdownRef.current) {
-            clearInterval(countdownRef.current);
-            countdownRef.current = null;
-          }
+          if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
           return null;
         }
         return prev - 1;
@@ -159,60 +104,36 @@ export function ChatPanel({ className = '', onOpenNote }: ChatPanelProps) {
 
   const scrollToBottom = useCallback(() => {
     if (messagesContainerRef.current) {
-      // Scroll the messages container to the bottom
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
     }
   }, []);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, scrollToBottom]);
+  useEffect(() => { scrollToBottom(); }, [messages, scrollToBottom]);
 
-  // Collect all sources from messages for sources panel
   useEffect(() => {
-    const allSources: Source[] = [];
     const seen = new Set<string>();
-
-    for (const msg of messages) {
-      if (msg.sources) {
-        for (const s of msg.sources) {
-          if (!seen.has(s.id)) {
-            seen.add(s.id);
-            allSources.push(s);
-          }
-        }
-      }
-    }
-
-    setActiveSources(allSources);
+    const sources = messages.flatMap(m => m.sources || []).filter(s => !seen.has(s.id) && seen.add(s.id));
+    setActiveSources(sources);
   }, [messages]);
 
-  // Generate follow-up suggestions based on the last assistant message
   const followUpSuggestions = useMemo(() => {
-    const lastAssistantMessage = [...messages].reverse().find(m => m.role === 'assistant' && !m.isError && !m.isStreaming);
-    if (!lastAssistantMessage?.meta) return [];
-    return getFollowUpSuggestions(lastAssistantMessage.meta.intent, lastAssistantMessage.meta.sourceCount);
+    const last = [...messages].reverse().find(m => m.role === 'assistant' && !m.isError && !m.isStreaming);
+    return last?.meta ? getFollowUpSuggestions(last.meta.intent, last.meta.sourceCount) : [];
   }, [messages]);
 
   const handleSend = useCallback(async (text?: string) => {
     const messageText = (text || input).trim();
     if (!messageText || isLoading || rateLimitCountdown !== null) return;
-
     if (messageText.length > MAX_MESSAGE_LENGTH) {
       showToast(`Message too long. Maximum ${MAX_MESSAGE_LENGTH} characters.`, 'error');
       return;
     }
-
     setInput('');
-
     try {
       await sendMessage(messageText);
     } catch (err) {
       if (err instanceof ApiRequestError) {
-        if (err.status === 429) {
-          const retrySeconds = err.retryAfterSeconds || 30;
-          startRateLimitCountdown(retrySeconds);
-        }
+        if (err.status === 429) startRateLimitCountdown(err.retryAfterSeconds || 30);
         showToast(err.getUserMessage(), 'error');
       }
     } finally {
@@ -221,10 +142,7 @@ export function ChatPanel({ className = '', onOpenNote }: ChatPanelProps) {
   }, [input, isLoading, rateLimitCountdown, showToast, sendMessage, startRateLimitCountdown]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
   }, [handleSend]);
 
   const handleSuggestionClick = useCallback((prompt: string) => {
@@ -343,14 +261,19 @@ export function ChatPanel({ className = '', onOpenNote }: ChatPanelProps) {
               messages.map((message, idx) => {
                 const requestId = message.meta?.requestId;
                 const showFeedback = message.role === 'assistant' && !message.isError && !message.isStreaming && requestId;
-                const feedbackState = showFeedback ? {
-                  hasSent: feedbackSent.has(requestId),
-                  isCommentMode: feedbackCommentFor === requestId,
-                  comment: feedbackComment,
-                  isSubmitting: feedbackSubmitting,
-                } : undefined;
-
                 const isLastMessage = idx === messages.length - 1;
+
+                const feedbackStateProps = showFeedback ? {
+                  feedbackState: {
+                    hasSent: feedbackSent.has(requestId),
+                    isCommentMode: feedbackCommentFor === requestId,
+                    comment: feedbackComment,
+                    isSubmitting: feedbackSubmitting,
+                  },
+                  onFeedback: (rating: FeedbackRating, comment?: string) => handleFeedback(message, rating, comment),
+                  onFeedbackCommentChange: setFeedbackComment,
+                  onCancelFeedback: handleCancelFeedbackComment,
+                } : {};
 
                 return (
                   <ChatMessage
@@ -358,15 +281,12 @@ export function ChatPanel({ className = '', onOpenNote }: ChatPanelProps) {
                     message={message}
                     onSourceClick={handleSourceClick}
                     activeSourceId={selectedSourceId}
-                    onRetry={message.isError && isLastMessage ? handleRetry : undefined}
-                    feedbackState={feedbackState}
-                    onFeedback={showFeedback ? (rating, comment) => handleFeedback(message, rating, comment) : undefined}
-                    onFeedbackCommentChange={showFeedback ? setFeedbackComment : undefined}
-                    onCancelFeedback={showFeedback ? handleCancelFeedbackComment : undefined}
+                    {...(message.isError && isLastMessage && { onRetry: handleRetry })}
+                    {...feedbackStateProps}
                     isLastMessage={isLastMessage}
-                    suggestedQuestions={isLastMessage ? followUpSuggestions : undefined}
-                    onSuggestedQuestion={isLastMessage ? handleSend : undefined}
-                    onNoteClick={onOpenNote}
+                    {...(isLastMessage && followUpSuggestions.length > 0 && { suggestedQuestions: followUpSuggestions })}
+                    {...(isLastMessage && { onSuggestedQuestion: handleSend })}
+                    {...(onOpenNote && { onNoteClick: onOpenNote })}
                   />
                 );
               })

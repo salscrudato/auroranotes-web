@@ -1,18 +1,30 @@
 /**
- * LiveRegion component
- * Provides screen reader announcements for dynamic content changes
- * Uses aria-live regions for accessible notifications
+ * Screen reader announcements via aria-live regions.
  */
 
-import { createContext, useContext, useCallback, useState, useRef, useEffect, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useCallback,
+  useState,
+  useRef,
+  useEffect,
+  useMemo,
+  memo,
+  type ReactNode,
+} from 'react';
 
-type AnnouncePriority = 'polite' | 'assertive';
+export type AnnouncePriority = 'polite' | 'assertive';
 
 interface LiveRegionContextValue {
   announce: (message: string, priority?: AnnouncePriority) => void;
 }
 
 const LiveRegionContext = createContext<LiveRegionContextValue | null>(null);
+
+/** Timing constants */
+const ANNOUNCE_DELAY_MS = 50;
+const CLEAR_DELAY_MS = 1000;
 
 interface LiveRegionProviderProps {
   children: ReactNode;
@@ -23,80 +35,82 @@ export function LiveRegionProvider({ children }: LiveRegionProviderProps) {
   const [assertiveMessage, setAssertiveMessage] = useState('');
   const timeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
 
-  // Cleanup timeouts on unmount
   useEffect(() => {
     const timeouts = timeoutsRef.current;
     return () => {
-      timeouts.forEach((timeout) => clearTimeout(timeout));
+      timeouts.forEach(clearTimeout);
       timeouts.clear();
     };
   }, []);
 
   const announce = useCallback((message: string, priority: AnnouncePriority = 'polite') => {
-    const clearMessage = () => {
-      if (priority === 'assertive') {
-        setAssertiveMessage('');
-      } else {
-        setPoliteMessage('');
-      }
-    };
+    const setMessage = priority === 'assertive' ? setAssertiveMessage : setPoliteMessage;
 
-    // Clear any existing message first to ensure the new message is announced
-    clearMessage();
+    // Clear first to ensure re-announcement
+    setMessage('');
 
-    // Set new message after a small delay to trigger announcement
+    // Set new message after delay
     const setTimer = setTimeout(() => {
-      if (priority === 'assertive') {
-        setAssertiveMessage(message);
-      } else {
-        setPoliteMessage(message);
-      }
+      setMessage(message);
       timeoutsRef.current.delete(setTimer);
-    }, 50);
+    }, ANNOUNCE_DELAY_MS);
     timeoutsRef.current.add(setTimer);
 
-    // Clear message after it's been announced
+    // Clear after announcement
     const clearTimer = setTimeout(() => {
-      clearMessage();
+      setMessage('');
       timeoutsRef.current.delete(clearTimer);
-    }, 1000);
+    }, CLEAR_DELAY_MS);
     timeoutsRef.current.add(clearTimer);
   }, []);
 
+  const contextValue = useMemo(() => ({ announce }), [announce]);
+
   return (
-    <LiveRegionContext.Provider value={{ announce }}>
+    <LiveRegionContext.Provider value={contextValue}>
       {children}
-      {/* Screen reader only live regions */}
-      <div
-        aria-live="polite"
-        aria-atomic="true"
-        className="sr-only"
-        role="status"
-      >
-        {politeMessage}
-      </div>
-      <div
-        aria-live="assertive"
-        aria-atomic="true"
-        className="sr-only"
-        role="alert"
-      >
-        {assertiveMessage}
-      </div>
+      <LiveRegionAnnouncer politeMessage={politeMessage} assertiveMessage={assertiveMessage} />
     </LiveRegionContext.Provider>
   );
 }
 
+// ============================================================================
+// Sub-components
+// ============================================================================
+
+interface LiveRegionAnnouncerProps {
+  politeMessage: string;
+  assertiveMessage: string;
+}
+
+const LiveRegionAnnouncer = memo(function LiveRegionAnnouncer({
+  politeMessage,
+  assertiveMessage,
+}: LiveRegionAnnouncerProps) {
+  return (
+    <>
+      <div aria-live="polite" aria-atomic="true" className="sr-only" role="status">
+        {politeMessage}
+      </div>
+      <div aria-live="assertive" aria-atomic="true" className="sr-only" role="alert">
+        {assertiveMessage}
+      </div>
+    </>
+  );
+});
+
+// ============================================================================
+// Hook
+// ============================================================================
+
 /**
  * Hook to access the announce function for screen reader notifications
- * Note: Co-located with provider for simplicity; Fast Refresh still works but may refresh whole tree
  */
 // eslint-disable-next-line react-refresh/only-export-components
-export function useAnnounce() {
+export function useAnnounce(): LiveRegionContextValue['announce'] {
   const context = useContext(LiveRegionContext);
   if (!context) {
     throw new Error('useAnnounce must be used within a LiveRegionProvider');
   }
   return context.announce;
 }
-

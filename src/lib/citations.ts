@@ -45,6 +45,9 @@ export function parseSources(
     const id = match[1]; // e.g., "1"
     const matchIndex = match.index!;
 
+    // Skip if id is undefined
+    if (!id) continue;
+
     // Add text before this source
     if (matchIndex > lastIndex) {
       segments.push({
@@ -104,7 +107,7 @@ export function getReferencedSources(
   const matches = text.matchAll(SOURCE_PATTERN);
   for (const match of matches) {
     const id = match[1];
-    if (!seen.has(id)) {
+    if (id && !seen.has(id)) {
       seen.add(id);
       const source = sourceMap.get(id);
       if (source) {

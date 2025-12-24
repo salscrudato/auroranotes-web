@@ -1,39 +1,17 @@
-/**
- * AuthenticatedApp - Wrapper that shows landing page or app content based on auth state
- * Also handles connecting the auth token getter to the API client
- */
-
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useLayoutEffect, type ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
-import { useAuth } from '../../auth/useAuth';
-import { setTokenGetter } from '../../lib/api';
+import { useAuth } from '@/auth/useAuth';
+import { setTokenGetter } from '@/lib/api';
 import { LandingPage } from './LandingPage';
 
-interface AuthenticatedAppProps {
-  children: ReactNode;
-}
-
-export function AuthenticatedApp({ children }: AuthenticatedAppProps) {
+export function AuthenticatedApp({ children }: { children: ReactNode }) {
   const { user, loading, getToken } = useAuth();
-  const tokenGetterSet = useRef(false);
 
-  // Connect auth token getter to API client synchronously before children render
-  // useLayoutEffect runs synchronously after DOM mutations but before paint
+  // Connect auth token to API client before render
   useLayoutEffect(() => {
-    if (!tokenGetterSet.current && getToken) {
-      setTokenGetter(getToken);
-      tokenGetterSet.current = true;
-    }
+    setTokenGetter(getToken);
   }, [getToken]);
 
-  // Update token getter if getToken changes
-  useEffect(() => {
-    if (getToken) {
-      setTokenGetter(getToken);
-    }
-  }, [getToken]);
-
-  // Show loading spinner while checking auth state
   if (loading) {
     return (
       <div className="auth-loading">
@@ -43,12 +21,7 @@ export function AuthenticatedApp({ children }: AuthenticatedAppProps) {
     );
   }
 
-  // Show landing page if not authenticated
-  if (!user) {
-    return <LandingPage />;
-  }
+  if (!user) return <LandingPage />;
 
-  // Show app content if authenticated
   return <>{children}</>;
 }
-

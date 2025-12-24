@@ -40,7 +40,8 @@ export function useConversations() {
   const [conversations, setConversations] = useState<Conversation[]>(loadConversations);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(() => {
     const convs = loadConversations();
-    return convs.length > 0 ? convs[0].id : null;
+    const first = convs[0];
+    return first ? first.id : null;
   });
 
   // Persist on change
@@ -56,7 +57,7 @@ export function useConversations() {
     const now = new Date().toISOString();
     const conv: Conversation = {
       id: nanoid(),
-      title,
+      title: title ?? 'New conversation',
       messages: [],
       createdAt: now,
       updatedAt: now,

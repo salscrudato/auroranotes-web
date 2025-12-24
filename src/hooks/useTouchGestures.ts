@@ -63,6 +63,7 @@ export function useTouchGestures({
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     const touch = e.touches[0];
+    if (!touch) return;
     touchStartPos.current = { x: touch.clientX, y: touch.clientY };
     hasMovedRef.current = false;
 
@@ -82,6 +83,7 @@ export function useTouchGestures({
     if (!touchStartPos.current) return;
 
     const touch = e.touches[0];
+    if (!touch) return;
     const deltaX = touch.clientX - touchStartPos.current.x;
     const deltaY = touch.clientY - touchStartPos.current.y;
 
@@ -101,6 +103,7 @@ export function useTouchGestures({
     }
 
     const touch = e.changedTouches[0];
+    if (!touch) return;
     const deltaX = touch.clientX - touchStartPos.current.x;
     const deltaY = touch.clientY - touchStartPos.current.y;
 

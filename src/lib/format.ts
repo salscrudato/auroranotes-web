@@ -75,17 +75,21 @@ export function formatFullTimestamp(d: Date | null): string {
  * Normalize a raw note from API to consistent format
  */
 export function normalizeNote(raw: RawNote): Note {
-  return {
+  const note: Note = {
     id: raw.id || `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    title: raw.title,
     text: raw.text || '',
     tenantId: raw.tenantId || 'public',
-    processingStatus: raw.processingStatus,
-    tags: raw.tags,
-    metadata: raw.metadata,
     createdAt: toDate(raw.createdAt),
     updatedAt: toDate(raw.updatedAt),
   };
+
+  // Only add optional properties if they have defined values
+  if (raw.title !== undefined) note.title = raw.title;
+  if (raw.processingStatus !== undefined) note.processingStatus = raw.processingStatus;
+  if (raw.tags !== undefined) note.tags = raw.tags;
+  if (raw.metadata !== undefined) note.metadata = raw.metadata;
+
+  return note;
 }
 
 

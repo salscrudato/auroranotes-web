@@ -1,9 +1,8 @@
 /**
- * GlobalSearch component - Command palette style global search
- * Searchable overlay with keyboard navigation
+ * Command palette style global search with keyboard navigation.
  */
 
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo, memo } from 'react';
 import { Search, FileText, Tag, X, ArrowRight } from 'lucide-react';
 import type { Note } from '../../lib/types';
 import { cn } from '../../lib/utils';
@@ -24,10 +23,10 @@ interface SearchItem {
   score: number;
 }
 
-export function GlobalSearch({ 
-  isOpen, 
-  onClose, 
-  notes, 
+export const GlobalSearch = memo(function GlobalSearch({
+  isOpen,
+  onClose,
+  notes,
   onSelectNote,
   onSelectTag,
 }: GlobalSearchProps) {
@@ -286,5 +285,4 @@ export function GlobalSearch({
       </div>
     </div>
   );
-}
-
+});

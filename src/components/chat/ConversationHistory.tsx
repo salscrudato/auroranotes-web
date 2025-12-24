@@ -1,9 +1,8 @@
 /**
- * ConversationHistory component
- * Sidebar for managing past chat conversations
+ * Sidebar for managing past chat conversations.
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, memo } from 'react';
 import { MessageSquare, Plus, Trash2, Edit3, Check, X, Clock } from 'lucide-react';
 import type { Conversation } from '../../lib/types';
 import { cn } from '../../lib/utils';
@@ -19,7 +18,7 @@ interface ConversationHistoryProps {
   className?: string;
 }
 
-export function ConversationHistory({
+export const ConversationHistory = memo(function ConversationHistory({
   conversations,
   activeConversationId,
   onSelectConversation,
@@ -189,7 +188,7 @@ export function ConversationHistory({
       </div>
     </div>
   );
-}
+});
 
 /** Generate default title from first user message */
 function getDefaultTitle(conv: Conversation): string {

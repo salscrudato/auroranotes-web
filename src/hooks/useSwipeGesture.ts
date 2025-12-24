@@ -34,6 +34,7 @@ export function useSwipeGesture<T extends HTMLElement = HTMLElement>({
   const handleTouchStart = useCallback((e: TouchEvent) => {
     if (!enabled) return;
     const touch = e.touches[0];
+    if (!touch) return;
     startRef.current = {
       x: touch.clientX,
       y: touch.clientY,
@@ -45,6 +46,7 @@ export function useSwipeGesture<T extends HTMLElement = HTMLElement>({
     if (!enabled || !startRef.current) return;
 
     const touch = e.changedTouches[0];
+    if (!touch) return;
     const deltaX = touch.clientX - startRef.current.x;
     const deltaY = touch.clientY - startRef.current.y;
     const deltaTime = Date.now() - startRef.current.time;
@@ -96,11 +98,10 @@ export function useSwipeGesture<T extends HTMLElement = HTMLElement>({
 
 /** Hook for swipe-to-dismiss pattern */
 export function useSwipeToDismiss(onDismiss: () => void, direction: 'left' | 'right' | 'down' = 'right') {
-  return useSwipeGesture({
-    onSwipeLeft: direction === 'left' ? onDismiss : undefined,
-    onSwipeRight: direction === 'right' ? onDismiss : undefined,
-    onSwipeDown: direction === 'down' ? onDismiss : undefined,
-    threshold: 80,
-  });
+  const config: SwipeConfig = { threshold: 80 };
+  if (direction === 'left') config.onSwipeLeft = onDismiss;
+  if (direction === 'right') config.onSwipeRight = onDismiss;
+  if (direction === 'down') config.onSwipeDown = onDismiss;
+  return useSwipeGesture(config);
 }
 

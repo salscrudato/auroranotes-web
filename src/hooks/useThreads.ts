@@ -165,8 +165,9 @@ export function useThreadMutations() {
   const updateLocalThread = useCallback((id: string, updates: Partial<LocalThread>) => {
     const threads = loadLocalThreads();
     const idx = threads.findIndex(t => t.id === id);
-    if (idx >= 0) {
-      threads[idx] = { ...threads[idx], ...updates, updatedAt: new Date().toISOString() };
+    const existingThread = threads[idx];
+    if (idx >= 0 && existingThread) {
+      threads[idx] = { ...existingThread, ...updates, updatedAt: new Date().toISOString() };
       saveLocalThreads(threads);
     }
   }, []);

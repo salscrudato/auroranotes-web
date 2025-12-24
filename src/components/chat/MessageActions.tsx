@@ -1,9 +1,8 @@
 /**
- * MessageActions component
  * Hover menu for chat message actions (copy, regenerate, expand, etc.)
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, memo } from 'react';
 import { Copy, RefreshCw, Maximize2, MoreHorizontal, BookOpen, Share2, Trash2 } from 'lucide-react';
 import type { ChatMessage } from '../../lib/types';
 import { cn, copyToClipboard } from '../../lib/utils';
@@ -19,7 +18,7 @@ interface MessageActionsProps {
   className?: string;
 }
 
-export function MessageActions({
+export const MessageActions = memo(function MessageActions({
   message,
   onRegenerate,
   onExpand,
@@ -152,5 +151,4 @@ export function MessageActions({
       </div>
     </div>
   );
-}
-
+});

@@ -1,9 +1,8 @@
 /**
- * MarkdownEditor component - Text editor with Markdown preview
- * Supports live preview toggle and basic formatting shortcuts
+ * Text editor with Markdown preview and formatting shortcuts.
  */
 
-import { useState, useCallback, useRef, forwardRef, useImperativeHandle } from 'react';
+import { useState, useCallback, useRef, forwardRef, useImperativeHandle, useMemo } from 'react';
 import { Eye, Edit3, Bold, Italic, List, Link2, Code } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
@@ -96,9 +95,10 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
       }
     }, [value, onChange]);
 
-    // Simple markdown to HTML conversion for preview
-    const renderPreview = useCallback((md: string): string => {
-      return md
+    // Simple markdown to HTML conversion for preview (memoized)
+    const previewHtml = useMemo(() => {
+      if (!showPreview) return '';
+      return value
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.*?)\*/g, '<em>$1</em>')
         .replace(/`(.*?)`/g, '<code class="bg-[var(--color-surface-hover)] px-1 rounded">$1</code>')
@@ -107,9 +107,9 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
         .replace(/^# (.*$)/gm, '<h1 class="text-2xl font-bold mt-4 mb-2">$1</h1>')
         .replace(/^- (.*$)/gm, '<li class="ml-4">$1</li>')
         .replace(/\n/g, '<br />');
-    }, []);
+    }, [value, showPreview]);
 
-    const ToolbarButton = ({ icon: Icon, label, action }: { icon: typeof Bold; label: string; action: () => void }) => (
+    const ToolbarButton = useCallback(({ icon: Icon, label, action }: { icon: typeof Bold; label: string; action: () => void }) => (
       <button
         type="button"
         onClick={action}
@@ -123,7 +123,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
       >
         <Icon size={16} />
       </button>
-    );
+    ), []);
 
     return (
       <div className={cn('flex flex-col rounded-lg border border-[var(--color-border)]', className)}>
@@ -206,7 +206,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
               'text-[var(--color-text-primary)]'
             )}
             style={{ minHeight, maxHeight }}
-            dangerouslySetInnerHTML={{ __html: renderPreview(value) || '<span class="text-[var(--color-text-tertiary)]">Nothing to preview</span>' }}
+            dangerouslySetInnerHTML={{ __html: previewHtml || '<span class="text-[var(--color-text-tertiary)]">Nothing to preview</span>' }}
           />
         ) : (
           <textarea

@@ -254,13 +254,17 @@ export function classifyNote(text: string): NoteClassification {
   // Get template for this type
   const template = NOTE_TEMPLATES.find(t => t.id === bestType);
 
-  return {
+  // Build result, only including optional properties if defined
+  const result: NoteClassification = {
     type: bestType,
     confidence,
     suggestedTags,
-    suggestedTitle,
-    template,
   };
+
+  if (suggestedTitle !== undefined) result.suggestedTitle = suggestedTitle;
+  if (template !== undefined) result.template = template;
+
+  return result;
 }
 
 /**
@@ -321,12 +325,13 @@ function generateSuggestedTags(text: string, noteType: NoteType): string[] {
 function generateSuggestedTitle(text: string): string | undefined {
   // Try to extract title from markdown header
   const headerMatch = text.match(/^#\s+(.+)$/m);
-  if (headerMatch) {
+  if (headerMatch && headerMatch[1]) {
     return headerMatch[1].trim().slice(0, 60);
   }
 
   // Use first line if it's short enough
-  const firstLine = text.split('\n')[0].trim();
+  const lines = text.split('\n');
+  const firstLine = lines[0]?.trim() ?? '';
   if (firstLine.length > 5 && firstLine.length <= 60) {
     // Clean up common prefixes
     const cleaned = firstLine

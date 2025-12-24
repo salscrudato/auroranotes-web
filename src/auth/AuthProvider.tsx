@@ -1,15 +1,4 @@
-/**
- * AuthProvider - Firebase Authentication Context
- * Provides authentication state and methods throughout the app
- */
-
-import {
-  useState,
-  useEffect,
-  useCallback,
-  useMemo,
-  type ReactNode,
-} from 'react';
+import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
   getFirebaseAuth,
@@ -20,171 +9,106 @@ import {
   getIdToken,
   type User,
 } from '../lib/firebase';
-import {
-  AuthContext,
-  type AuthUser,
-  type AuthError,
-  type AuthContextValue,
-} from './useAuth';
+import { AuthContext, type AuthUser, type AuthError, type AuthContextValue } from './useAuth';
 
-// ============================================
-// Helper: Convert Firebase User to AuthUser
-// ============================================
+const toAuthUser = (user: User): AuthUser => ({
+  uid: user.uid,
+  email: user.email,
+  displayName: user.displayName,
+  photoURL: user.photoURL,
+  phoneNumber: user.phoneNumber,
+});
 
-function toAuthUser(user: User): AuthUser {
-  return {
-    uid: user.uid,
-    email: user.email,
-    displayName: user.displayName,
-    photoURL: user.photoURL,
-    phoneNumber: user.phoneNumber,
-  };
-}
+const toAuthError = (err: unknown, fallbackMessage: string): AuthError => {
+  const e = err as { code?: string; message?: string };
+  return { code: e.code ?? 'auth/unknown', message: e.message ?? fallbackMessage };
+};
 
-// ============================================
-// Provider Component
-// ============================================
-
-interface AuthProviderProps {
-  children: ReactNode;
-}
-
-export function AuthProvider({ children }: AuthProviderProps) {
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<AuthError | null>(null);
   const [phoneVerificationPending, setPhoneVerificationPending] = useState(false);
 
-  // Listen to auth state changes
   useEffect(() => {
-    const auth = getFirebaseAuth();
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      if (firebaseUser) {
-        setUser(toAuthUser(firebaseUser));
-      } else {
-        setUser(null);
+    const unsubscribe = onAuthStateChanged(
+      getFirebaseAuth(),
+      (firebaseUser) => {
+        setUser(firebaseUser ? toAuthUser(firebaseUser) : null);
+        setLoading(false);
+      },
+      (err) => {
+        console.error('Auth state error:', err);
+        setError(toAuthError(err, err.message));
+        setLoading(false);
       }
-      setLoading(false);
-    }, (err) => {
-      console.error('Auth state error:', err);
-      const errorCode = (err as { code?: string }).code || 'auth/unknown';
-      setError({ code: errorCode, message: err.message });
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+    );
+    return unsubscribe;
   }, []);
 
-  // Token getter for API calls
-  const getToken = useCallback(async (): Promise<string | null> => {
-    return getIdToken(false);
-  }, []);
+  const getToken = useCallback(() => getIdToken(false), []);
 
-  // Sign in with Google
-  const signInWithGoogle = useCallback(async (): Promise<void> => {
+  const signInWithGoogle = useCallback(async () => {
     setError(null);
     try {
-      const firebaseUser = await firebaseSignInWithGoogle();
-      setUser(toAuthUser(firebaseUser));
-    } catch (err: unknown) {
-      const authErr = err as { code?: string; message?: string };
-      const authError: AuthError = {
-        code: authErr.code || 'auth/unknown',
-        message: authErr.message || 'Failed to sign in with Google',
-      };
-      setError(authError);
+      await firebaseSignInWithGoogle();
+    } catch (err) {
+      setError(toAuthError(err, 'Failed to sign in with Google'));
       throw err;
     }
   }, []);
 
-  // Start phone sign-in
-  const startPhoneSignIn = useCallback(async (phoneE164: string): Promise<void> => {
+  const startPhoneSignIn = useCallback(async (phoneE164: string) => {
     setError(null);
     try {
-      // Pass the button ID for invisible reCAPTCHA
       await firebaseStartPhoneSignIn(phoneE164, 'phone-sign-in-button');
       setPhoneVerificationPending(true);
-    } catch (err: unknown) {
-      const authErr = err as { code?: string; message?: string };
-      const authError: AuthError = {
-        code: authErr.code || 'auth/unknown',
-        message: authErr.message || 'Failed to send verification code',
-      };
-      setError(authError);
+    } catch (err) {
+      setError(toAuthError(err, 'Failed to send verification code'));
       setPhoneVerificationPending(false);
       throw err;
     }
   }, []);
 
-  // Verify phone code
-  const verifyPhoneCode = useCallback(async (code: string): Promise<void> => {
+  const verifyPhoneCode = useCallback(async (code: string) => {
     setError(null);
     try {
-      const firebaseUser = await firebaseVerifyPhoneCode(code);
-      setUser(toAuthUser(firebaseUser));
+      await firebaseVerifyPhoneCode(code);
       setPhoneVerificationPending(false);
-    } catch (err: unknown) {
-      const authErr = err as { code?: string; message?: string };
-      const authError: AuthError = {
-        code: authErr.code || 'auth/unknown',
-        message: authErr.message || 'Invalid verification code',
-      };
-      setError(authError);
+    } catch (err) {
+      setError(toAuthError(err, 'Invalid verification code'));
       throw err;
     }
   }, []);
 
-  // Sign out
-  const signOut = useCallback(async (): Promise<void> => {
+  const signOut = useCallback(async () => {
     setError(null);
     try {
       await firebaseSignOut();
-      setUser(null);
       setPhoneVerificationPending(false);
-    } catch (err: unknown) {
-      const authErr = err as { code?: string; message?: string };
-      const authError: AuthError = {
-        code: authErr.code || 'auth/unknown',
-        message: authErr.message || 'Failed to sign out',
-      };
-      setError(authError);
+    } catch (err) {
+      setError(toAuthError(err, 'Failed to sign out'));
       throw err;
     }
   }, []);
 
-  // Clear error
-  const clearError = useCallback(() => {
-    setError(null);
-  }, []);
+  const clearError = useCallback(() => setError(null), []);
 
-  // Memoize context value
-  const value = useMemo<AuthContextValue>(() => ({
-    user,
-    loading,
-    error,
-    getToken,
-    signInWithGoogle,
-    startPhoneSignIn,
-    verifyPhoneCode,
-    signOut,
-    clearError,
-    phoneVerificationPending,
-  }), [
-    user,
-    loading,
-    error,
-    getToken,
-    signInWithGoogle,
-    startPhoneSignIn,
-    verifyPhoneCode,
-    signOut,
-    clearError,
-    phoneVerificationPending,
-  ]);
-
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      user,
+      loading,
+      error,
+      getToken,
+      signInWithGoogle,
+      startPhoneSignIn,
+      verifyPhoneCode,
+      signOut,
+      clearError,
+      phoneVerificationPending,
+    }),
+    [user, loading, error, getToken, signInWithGoogle, startPhoneSignIn, verifyPhoneCode, signOut, clearError, phoneVerificationPending]
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

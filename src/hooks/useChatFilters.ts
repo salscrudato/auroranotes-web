@@ -52,11 +52,12 @@ export function useChatFilters() {
   }, []);
 
   const setDateRange = useCallback((start?: string, end?: string) => {
-    setFilters(prev => ({
-      ...prev,
-      dateRange: { start, end },
-      mode: 'date',
-    }));
+    setFilters(prev => {
+      const dateRange: { start?: string; end?: string } = {};
+      if (start !== undefined) dateRange.start = start;
+      if (end !== undefined) dateRange.end = end;
+      return { ...prev, dateRange, mode: 'date' as const };
+    });
   }, []);
 
   const setNoteContext = useCallback((noteId: string) => {
@@ -113,7 +114,9 @@ export function useChatFilters() {
         return note.tags?.some(t => filters.tags?.includes(t)) ?? false;
       case 'date':
         if (!note.createdAt) return true;
-        const noteDate = note.createdAt.toISOString().split('T')[0];
+        const noteDateParts = note.createdAt.toISOString().split('T');
+        const noteDate = noteDateParts[0];
+        if (!noteDate) return true;
         if (filters.dateRange?.start && noteDate < filters.dateRange.start) return false;
         if (filters.dateRange?.end && noteDate > filters.dateRange.end) return false;
         return true;

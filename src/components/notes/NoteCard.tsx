@@ -1,10 +1,8 @@
 /**
- * NoteCard component - Apple-inspired design
- * Clean, typography-focused note display with subtle interactions
- * Supports search highlighting, external highlight state, and touch gestures
+ * Apple-inspired note card with search highlighting, touch gestures, and actions.
  */
 
-import { useState, useCallback, useEffect, memo } from 'react';
+import { useState, useCallback, useEffect, memo, useMemo } from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
 import type { Note } from '../../lib/types';
 import { formatRelativeTime, formatFullTimestamp } from '../../lib/format';
@@ -106,10 +104,11 @@ export const NoteCard = memo(function NoteCard({
   const relativeTime = formatRelativeTime(note.createdAt);
   const fullTime = formatFullTimestamp(note.createdAt);
 
-  // Render text with optional search highlighting
-  const renderText = () => {
+  // Memoized highlighted text
+  const highlightedText = useMemo(() => {
     const parts = splitTextForHighlight(note.text, searchQuery);
-    if (parts.length === 1 && !parts[0].isMatch) {
+    const firstPart = parts[0];
+    if (parts.length === 1 && firstPart && !firstPart.isMatch) {
       return note.text;
     }
     return (
@@ -123,7 +122,7 @@ export const NoteCard = memo(function NoteCard({
         )}
       </>
     );
-  };
+  }, [note.text, searchQuery]);
 
   // Handle keyboard shortcuts for note actions
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -182,79 +181,87 @@ export const NoteCard = memo(function NoteCard({
       {!expanded && (
         <>
           <div className="note-title">
-            {searchQuery ? renderText() : titleText}
+            {searchQuery ? highlightedText : titleText}
           </div>
           {previewText && !searchQuery && (
             <div className="note-preview">{previewText}</div>
           )}
-          <div className="note-footer">
-            <span className="note-time" title={fullTime}>
-              {isPending ? 'Saving…' : relativeTime}
-            </span>
-
-            {/* Overflow menu button - visible on hover */}
-            <div className="note-actions">
-              {onEdit && (
-                <button
-                  className="note-action-btn"
-                  onClick={handleEdit}
-                  title="Edit"
-                  aria-label="Edit note"
-                >
-                  <Pencil size={15} />
-                </button>
-              )}
-              {onDelete && (
-                <button
-                  className="note-action-btn note-action-danger"
-                  onClick={handleDelete}
-                  title="Delete"
-                  aria-label="Delete note"
-                >
-                  <Trash2 size={15} />
-                </button>
-              )}
-            </div>
-          </div>
+          <NoteFooter
+            isPending={isPending}
+            relativeTime={relativeTime}
+            fullTime={fullTime}
+            onEdit={onEdit ? handleEdit : undefined}
+            onDelete={onDelete ? handleDelete : undefined}
+          />
         </>
       )}
 
       {/* Expanded view: full content */}
       {expanded && (
         <>
-          <div className="note-text">
-            {renderText()}
-          </div>
-          <div className="note-footer">
-            <span className="note-time" title={fullTime}>
-              {isPending ? 'Saving…' : relativeTime}
-            </span>
-            <div className="note-actions note-actions-visible">
-              {onEdit && (
-                <button
-                  className="note-action-btn"
-                  onClick={handleEdit}
-                  title="Edit"
-                  aria-label="Edit note"
-                >
-                  <Pencil size={15} />
-                </button>
-              )}
-              {onDelete && (
-                <button
-                  className="note-action-btn note-action-danger"
-                  onClick={handleDelete}
-                  title="Delete"
-                  aria-label="Delete note"
-                >
-                  <Trash2 size={15} />
-                </button>
-              )}
-            </div>
-          </div>
+          <div className="note-text">{highlightedText}</div>
+          <NoteFooter
+            isPending={isPending}
+            relativeTime={relativeTime}
+            fullTime={fullTime}
+            onEdit={onEdit ? handleEdit : undefined}
+            onDelete={onDelete ? handleDelete : undefined}
+            actionsVisible
+          />
         </>
       )}
     </article>
   );
 });
 
+// ============================================================================
+// Sub-components
+// ============================================================================
+
+interface NoteFooterProps {
+  isPending: boolean;
+  relativeTime: string;
+  fullTime: string;
+  onEdit: ((e: React.MouseEvent) => void) | undefined;
+  onDelete: ((e: React.MouseEvent) => void) | undefined;
+  actionsVisible?: boolean;
+}
+
+const NoteFooter = memo(function NoteFooter({
+  isPending,
+  relativeTime,
+  fullTime,
+  onEdit,
+  onDelete,
+  actionsVisible = false,
+}: NoteFooterProps) {
+  return (
+    <div className="note-footer">
+      <span className="note-time" title={fullTime}>
+        {isPending ? 'Saving…' : relativeTime}
+      </span>
+      <div className={cn('note-actions', actionsVisible && 'note-actions-visible')}>
+        {onEdit && (
+          <button
+            className="note-action-btn"
+            onClick={onEdit}
+            title="Edit"
+            aria-label="Edit note"
+          >
+            <Pencil size={15} />
+          </button>
+        )}
+        {onDelete && (
+          <button
+            className="note-action-btn note-action-danger"
+            onClick={onDelete}
+            title="Delete"
+            aria-label="Delete note"
+          >
+            <Trash2 size={15} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+});

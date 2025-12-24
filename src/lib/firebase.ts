@@ -18,17 +18,17 @@ import {
 } from 'firebase/auth';
 
 // Check if we should use the Firebase Auth Emulator
-const USE_AUTH_EMULATOR = import.meta.env.VITE_USE_FIREBASE_EMULATOR === 'true';
-const AUTH_EMULATOR_URL = import.meta.env.VITE_FIREBASE_AUTH_EMULATOR_URL || 'http://127.0.0.1:9099';
+const USE_AUTH_EMULATOR = import.meta.env['VITE_USE_FIREBASE_EMULATOR'] === 'true';
+const AUTH_EMULATOR_URL = import.meta.env['VITE_FIREBASE_AUTH_EMULATOR_URL'] || 'http://127.0.0.1:9099';
 
 // Firebase configuration from environment variables
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY as string,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN as string,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID as string,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET as string,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID as string,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID as string,
+  apiKey: import.meta.env['VITE_FIREBASE_API_KEY'] as string,
+  authDomain: import.meta.env['VITE_FIREBASE_AUTH_DOMAIN'] as string,
+  projectId: import.meta.env['VITE_FIREBASE_PROJECT_ID'] as string,
+  storageBucket: import.meta.env['VITE_FIREBASE_STORAGE_BUCKET'] as string,
+  messagingSenderId: import.meta.env['VITE_FIREBASE_MESSAGING_SENDER_ID'] as string,
+  appId: import.meta.env['VITE_FIREBASE_APP_ID'] as string,
 };
 
 // Validate required config

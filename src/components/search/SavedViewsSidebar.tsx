@@ -1,8 +1,8 @@
 /**
- * SavedViewsSidebar component - Manage and apply saved filter views
+ * Sidebar to manage and apply saved filter views.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo, memo } from 'react';
 import { Bookmark, Plus, Trash2, Edit3, Check, X, Filter } from 'lucide-react';
 import type { SavedView } from '../../lib/types';
 import { cn } from '../../lib/utils';
@@ -16,7 +16,7 @@ interface SavedViewsSidebarProps {
   className?: string;
 }
 
-export function SavedViewsSidebar({
+export const SavedViewsSidebar = memo(function SavedViewsSidebar({
   activeViewId,
   onApplyView,
   onClearView,
@@ -56,13 +56,13 @@ export function SavedViewsSidebar({
     }
   }, [deleteView, activeViewId, onClearView]);
 
-  const hasActiveFilters = currentFilters && (
+  const hasActiveFilters = useMemo(() => currentFilters && (
     currentFilters.tags?.length ||
     currentFilters.noteType ||
     currentFilters.dateRange?.start ||
     currentFilters.dateRange?.end ||
     currentFilters.searchQuery
-  );
+  ), [currentFilters]);
 
   return (
     <div className={cn('flex flex-col', className)}>
@@ -205,7 +205,7 @@ export function SavedViewsSidebar({
       </div>
 
       {/* Filter Summary */}
-      {hasActiveFilters && (
+      {hasActiveFilters && currentFilters && (
         <div className="px-3 py-2 border-t border-[var(--color-border)] text-xs text-[var(--color-text-tertiary)]">
           <div className="flex items-center gap-1 flex-wrap">
             {currentFilters.tags?.map(tag => (
@@ -228,5 +228,4 @@ export function SavedViewsSidebar({
       )}
     </div>
   );
-}
-
+});

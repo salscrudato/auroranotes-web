@@ -356,10 +356,13 @@ export function useSpeechToText(options: UseSpeechToTextOptions = {}): UseSpeech
 
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
-          if (result.isFinal) {
-            finalTranscriptRef.current += result[0].transcript;
-          } else {
-            interimTranscript += result[0].transcript;
+          if (result) {
+            const firstAlternative = result[0];
+            if (result.isFinal && firstAlternative) {
+              finalTranscriptRef.current += firstAlternative.transcript;
+            } else if (firstAlternative) {
+              interimTranscript += firstAlternative.transcript;
+            }
           }
         }
 

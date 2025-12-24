@@ -16,16 +16,13 @@ export default defineConfig([
       reactRefresh.configs.vite,
     ],
     languageOptions: {
-      ecmaVersion: 2022,
+      ecmaVersion: 2023,
       globals: globals.browser,
     },
     rules: {
-      // Enforce consistent code style
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/consistent-type-imports': 'error',
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       'no-console': ['warn', { allow: ['warn', 'error'] }],
-      // React best practices
-      'react-hooks/exhaustive-deps': 'warn',
     },
   },
 ])

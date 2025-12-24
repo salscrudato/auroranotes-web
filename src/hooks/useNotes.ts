@@ -78,12 +78,12 @@ export function useCreateNote() {
       const optimisticNote: Note = {
         id: `temp-${Date.now()}`,
         text: newNote.text,
-        title: newNote.title,
-        tags: newNote.tags,
         tenantId: 'public',
         createdAt: new Date(),
         updatedAt: new Date(),
       };
+      if (newNote.title !== undefined) optimisticNote.title = newNote.title;
+      if (newNote.tags !== undefined) optimisticNote.tags = newNote.tags;
 
       queryClient.setQueryData(queryKeys.notes.all, (old: unknown) => {
         if (!old) return { pages: [{ notes: [optimisticNote], hasMore: false, cursor: null }], pageParams: [undefined] };

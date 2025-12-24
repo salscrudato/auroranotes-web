@@ -1,8 +1,5 @@
 /**
- * CommandPalette component
- * Cmd/Ctrl+K powered command palette for power users
- * Provides quick access to common actions and navigation
- * Uses Tailwind utilities
+ * Cmd/Ctrl+K command palette for quick access to actions and navigation.
  */
 
 import { useState, useCallback, useEffect, useRef, memo, useMemo } from 'react';
@@ -50,10 +47,7 @@ export const CommandPalette = memo(function CommandPalette({
   // Filter actions based on query
   const filteredActions = useMemo(() => {
     if (!query.trim()) {
-      // Show recent actions first, then all actions
-      const nonRecentActions = actions.filter(
-        (a) => !recentActionIds.includes(a.id)
-      );
+      const nonRecentActions = actions.filter((a) => !recentActionIds.includes(a.id));
       return [...recentActions, ...nonRecentActions];
     }
     const searchText = query.toLowerCase();
@@ -64,17 +58,15 @@ export const CommandPalette = memo(function CommandPalette({
     );
   }, [actions, query, recentActions, recentActionIds]);
 
-  // Compute bounded selected index - automatically clamps to valid range
-  // No need to reset via effect; just ensure index stays within bounds
+  // Bounded selected index - clamps to valid range
   const boundedSelectedIndex = useMemo(() => {
     if (filteredActions.length === 0) return 0;
     return Math.min(selectedIndex, filteredActions.length - 1);
   }, [selectedIndex, filteredActions.length]);
 
-  // Reset state when opened (detect edge from closed to open)
+  // Reset state when opened
   useEffect(() => {
     if (isOpen && !prevIsOpen.current) {
-      // Just opened - reset via timeout to avoid sync setState in effect
       const timeoutId = setTimeout(() => {
         setQuery('');
         setSelectedIndex(0);
@@ -87,9 +79,7 @@ export const CommandPalette = memo(function CommandPalette({
 
   // Scroll selected item into view
   useEffect(() => {
-    const listEl = listRef.current;
-    if (!listEl) return;
-    const selectedEl = listEl.querySelector('[data-selected="true"]');
+    const selectedEl = listRef.current?.querySelector('[data-selected="true"]');
     selectedEl?.scrollIntoView({ block: 'nearest' });
   }, [boundedSelectedIndex]);
 
@@ -108,6 +98,7 @@ export const CommandPalette = memo(function CommandPalette({
           e.preventDefault();
           if (filteredActions[boundedSelectedIndex]) {
             filteredActions[boundedSelectedIndex].action();
+            onActionExecuted?.(filteredActions[boundedSelectedIndex].id);
             onClose();
           }
           break;
@@ -117,7 +108,7 @@ export const CommandPalette = memo(function CommandPalette({
           break;
       }
     },
-    [filteredActions, boundedSelectedIndex, onClose]
+    [filteredActions, boundedSelectedIndex, onClose, onActionExecuted]
   );
 
   const handleItemClick = useCallback(
@@ -128,6 +119,10 @@ export const CommandPalette = memo(function CommandPalette({
     },
     [onClose, onActionExecuted]
   );
+
+  const handleSelectIndex = useCallback((index: number) => {
+    setSelectedIndex(index);
+  }, []);
 
   if (!isOpen) return null;
 
@@ -143,116 +138,203 @@ export const CommandPalette = memo(function CommandPalette({
         aria-modal="true"
         aria-label="Command palette"
       >
-        {/* Search Input */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--color-border)]">
-          <Search size={18} className="text-[var(--color-text-tertiary)] flex-shrink-0" />
-          <input
-            ref={inputRef}
-            type="text"
-            className="flex-1 bg-transparent border-none outline-none text-base text-[var(--color-text)] placeholder:text-[var(--color-placeholder)]"
-            placeholder="Type a command or search..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={handleKeyDown}
-            aria-label="Search commands"
-          />
-          <kbd className="px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-tertiary)] bg-[var(--color-bg-muted)] border border-[var(--color-border)] rounded">
-            ESC
-          </kbd>
-        </div>
+        <SearchInput
+          ref={inputRef}
+          value={query}
+          onChange={setQuery}
+          onKeyDown={handleKeyDown}
+        />
 
-        {/* Results */}
-        <div className="max-h-[300px] overflow-y-auto p-2" ref={listRef}>
-          {filteredActions.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-8 text-[var(--color-text-tertiary)]">
-              <Search size={24} className="mb-2 opacity-50" />
-              <p className="text-sm">No commands found</p>
-            </div>
-          ) : (
-            <>
-              {!query && recentActions.length > 0 && (
-                <div className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-                  Recent
-                </div>
-              )}
-              {filteredActions.map((action, index) => {
-                const isSelected = index === boundedSelectedIndex;
-                const showAllHeader = !query && index === recentActions.length && recentActions.length > 0;
+        <ResultsList
+          ref={listRef}
+          actions={filteredActions}
+          recentCount={query ? 0 : recentActions.length}
+          selectedIndex={boundedSelectedIndex}
+          onItemClick={handleItemClick}
+          onItemHover={handleSelectIndex}
+        />
 
-                return (
-                  <div key={action.id}>
-                    {showAllHeader && (
-                      <div className="px-2 py-1.5 mt-2 text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-tertiary)]">
-                        All Commands
-                      </div>
-                    )}
-                    <button
-                      className={cn(
-                        'w-full flex items-center gap-3 px-3 py-2.5 rounded-[var(--radius-md)] text-left transition-colors duration-100',
-                        isSelected
-                          ? 'bg-[var(--color-accent)] text-white'
-                          : 'hover:bg-[var(--color-surface-hover)]'
-                      )}
-                      data-selected={isSelected}
-                      onClick={() => handleItemClick(action)}
-                      onMouseEnter={() => setSelectedIndex(index)}
-                    >
-                      <span className={cn(
-                        'flex-shrink-0 [&>svg]:w-[18px] [&>svg]:h-[18px]',
-                        isSelected ? 'text-white/80' : 'text-[var(--color-text-tertiary)]'
-                      )}>
-                        {action.icon}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <span className={cn(
-                          'block text-sm font-medium truncate',
-                          isSelected ? 'text-white' : 'text-[var(--color-text)]'
-                        )}>
-                          {action.label}
-                        </span>
-                        {action.description && (
-                          <span className={cn(
-                            'block text-xs truncate',
-                            isSelected ? 'text-white/70' : 'text-[var(--color-text-secondary)]'
-                          )}>
-                            {action.description}
-                          </span>
-                        )}
-                      </div>
-                      {action.shortcut && (
-                        <kbd className={cn(
-                          'px-1.5 py-0.5 text-[10px] font-medium rounded border',
-                          isSelected
-                            ? 'bg-white/10 border-white/20 text-white/80'
-                            : 'bg-[var(--color-bg-muted)] border-[var(--color-border)] text-[var(--color-text-tertiary)]'
-                        )}>
-                          {action.shortcut}
-                        </kbd>
-                      )}
-                    </button>
-                  </div>
-                );
-              })}
-            </>
-          )}
-        </div>
-
-        {/* Footer hint */}
-        <div className="flex items-center justify-center gap-4 px-4 py-2.5 border-t border-[var(--color-border)] bg-[var(--color-bg-muted)]">
-          <span className="text-xs text-[var(--color-text-tertiary)]">
-            <kbd className="px-1 py-0.5 mr-1 text-[10px] bg-[var(--color-surface)] border border-[var(--color-border)] rounded">↑↓</kbd>
-            navigate
-          </span>
-          <span className="text-xs text-[var(--color-text-tertiary)]">
-            <kbd className="px-1 py-0.5 mr-1 text-[10px] bg-[var(--color-surface)] border border-[var(--color-border)] rounded">↵</kbd>
-            select
-          </span>
-          <span className="text-xs text-[var(--color-text-tertiary)]">
-            <kbd className="px-1 py-0.5 mr-1 text-[10px] bg-[var(--color-surface)] border border-[var(--color-border)] rounded">esc</kbd>
-            close
-          </span>
-        </div>
+        <Footer />
       </div>
     </div>
+  );
+});
+
+// ============================================================================
+// Sub-components
+// ============================================================================
+
+interface SearchInputProps {
+  value: string;
+  onChange: (value: string) => void;
+  onKeyDown: (e: React.KeyboardEvent) => void;
+}
+
+const SearchInput = memo(function SearchInput({
+  value,
+  onChange,
+  onKeyDown,
+  ref,
+}: SearchInputProps & { ref: React.Ref<HTMLInputElement> }) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--color-border)]">
+      <Search size={18} className="text-[var(--color-text-tertiary)] flex-shrink-0" />
+      <input
+        ref={ref}
+        type="text"
+        className="flex-1 bg-transparent border-none outline-none text-base text-[var(--color-text)] placeholder:text-[var(--color-placeholder)]"
+        placeholder="Type a command or search..."
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={onKeyDown}
+        aria-label="Search commands"
+      />
+      <kbd className="px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-tertiary)] bg-[var(--color-bg-muted)] border border-[var(--color-border)] rounded">
+        ESC
+      </kbd>
+    </div>
+  );
+});
+
+interface ResultsListProps {
+  actions: CommandAction[];
+  recentCount: number;
+  selectedIndex: number;
+  onItemClick: (action: CommandAction) => void;
+  onItemHover: (index: number) => void;
+}
+
+const ResultsList = memo(function ResultsList({
+  actions,
+  recentCount,
+  selectedIndex,
+  onItemClick,
+  onItemHover,
+  ref,
+}: ResultsListProps & { ref: React.Ref<HTMLDivElement> }) {
+  if (actions.length === 0) {
+    return (
+      <div className="max-h-[300px] overflow-y-auto p-2" ref={ref}>
+        <EmptyState />
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-h-[300px] overflow-y-auto p-2" ref={ref}>
+      {recentCount > 0 && <SectionHeader label="Recent" />}
+      {actions.map((action, index) => (
+        <CommandItem
+          key={action.id}
+          action={action}
+          isSelected={index === selectedIndex}
+          showHeader={index === recentCount && recentCount > 0}
+          onClick={() => onItemClick(action)}
+          onMouseEnter={() => onItemHover(index)}
+        />
+      ))}
+    </div>
+  );
+});
+
+const EmptyState = memo(function EmptyState() {
+  return (
+    <div className="flex flex-col items-center justify-center py-8 text-[var(--color-text-tertiary)]">
+      <Search size={24} className="mb-2 opacity-50" />
+      <p className="text-sm">No commands found</p>
+    </div>
+  );
+});
+
+const SectionHeader = memo(function SectionHeader({ label, className }: { label: string; className?: string }) {
+  return (
+    <div className={cn('px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-tertiary)]', className)}>
+      {label}
+    </div>
+  );
+});
+
+interface CommandItemProps {
+  action: CommandAction;
+  isSelected: boolean;
+  showHeader: boolean;
+  onClick: () => void;
+  onMouseEnter: () => void;
+}
+
+const CommandItem = memo(function CommandItem({
+  action,
+  isSelected,
+  showHeader,
+  onClick,
+  onMouseEnter,
+}: CommandItemProps) {
+  return (
+    <>
+      {showHeader && <SectionHeader label="All Commands" className="mt-2" />}
+      <button
+        className={cn(
+          'w-full flex items-center gap-3 px-3 py-2.5 rounded-[var(--radius-md)] text-left transition-colors duration-100',
+          isSelected ? 'bg-[var(--color-accent)] text-white' : 'hover:bg-[var(--color-surface-hover)]'
+        )}
+        data-selected={isSelected}
+        onClick={onClick}
+        onMouseEnter={onMouseEnter}
+      >
+        <span className={cn(
+          'flex-shrink-0 [&>svg]:w-[18px] [&>svg]:h-[18px]',
+          isSelected ? 'text-white/80' : 'text-[var(--color-text-tertiary)]'
+        )}>
+          {action.icon}
+        </span>
+        <div className="flex-1 min-w-0">
+          <span className={cn(
+            'block text-sm font-medium truncate',
+            isSelected ? 'text-white' : 'text-[var(--color-text)]'
+          )}>
+            {action.label}
+          </span>
+          {action.description && (
+            <span className={cn(
+              'block text-xs truncate',
+              isSelected ? 'text-white/70' : 'text-[var(--color-text-secondary)]'
+            )}>
+              {action.description}
+            </span>
+          )}
+        </div>
+        {action.shortcut && (
+          <kbd className={cn(
+            'px-1.5 py-0.5 text-[10px] font-medium rounded border',
+            isSelected
+              ? 'bg-white/10 border-white/20 text-white/80'
+              : 'bg-[var(--color-bg-muted)] border-[var(--color-border)] text-[var(--color-text-tertiary)]'
+          )}>
+            {action.shortcut}
+          </kbd>
+        )}
+      </button>
+    </>
+  );
+});
+
+const Footer = memo(function Footer() {
+  return (
+    <div className="flex items-center justify-center gap-4 px-4 py-2.5 border-t border-[var(--color-border)] bg-[var(--color-bg-muted)]">
+      <KeyHint keyLabel="↑↓" action="navigate" />
+      <KeyHint keyLabel="↵" action="select" />
+      <KeyHint keyLabel="esc" action="close" />
+    </div>
+  );
+});
+
+const KeyHint = memo(function KeyHint({ keyLabel, action }: { keyLabel: string; action: string }) {
+  return (
+    <span className="text-xs text-[var(--color-text-tertiary)]">
+      <kbd className="px-1 py-0.5 mr-1 text-[10px] bg-[var(--color-surface)] border border-[var(--color-border)] rounded">
+        {keyLabel}
+      </kbd>
+      {action}
+    </span>
   );
 });

@@ -1,10 +1,9 @@
 /**
- * NoteDetailDrawer component
- * Modal/drawer for viewing full note content when navigating from citations
- * Supports viewing, editing, tags display, and pinning
+ * Drawer for viewing full note content from chat citations.
+ * Supports viewing, editing, tags display, and pinning.
  */
 
-import { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback, useState, useMemo, memo } from 'react';
 import { FileText, X, Copy, Edit3, Pin, PinOff, Tag, Save, Trash2 } from 'lucide-react';
 import type { Note } from '../../lib/types';
 import { formatFullTimestamp, formatRelativeTime, shortId } from '../../lib/format';
@@ -25,7 +24,7 @@ interface NoteDetailDrawerProps {
   tagSuggestions?: string[];
 }
 
-export function NoteDetailDrawer({
+export const NoteDetailDrawer = memo(function NoteDetailDrawer({
   note,
   onClose,
   onEdit,
@@ -70,11 +69,11 @@ export function NoteDetailDrawer({
     if (!note || !onEdit || !editText.trim()) return;
     setIsSaving(true);
     try {
-      await onEdit(note.id, {
-        text: editText.trim(),
-        title: editTitle.trim() || undefined,
-        tags: editTags.length > 0 ? editTags : undefined,
-      });
+      const updates: { text: string; title?: string; tags?: string[] } = { text: editText.trim() };
+      const trimmedTitle = editTitle.trim();
+      if (trimmedTitle) updates.title = trimmedTitle;
+      if (editTags.length > 0) updates.tags = editTags;
+      await onEdit(note.id, updates);
       setIsEditing(false);
       showToast('Note updated', 'success');
     } catch {
@@ -113,8 +112,8 @@ export function NoteDetailDrawer({
   const fullTime = note.createdAt ? formatFullTimestamp(note.createdAt) : '';
   const pinned = isPinned(note.id);
 
-  // Highlight matching text if provided
-  const renderText = () => {
+  // Memoized highlighted text
+  const highlightedContent = useMemo(() => {
     const parts = splitTextForHighlight(note.text, highlightText || '');
     return (
       <div className="note-detail-text whitespace-pre-wrap">
@@ -127,7 +126,7 @@ export function NoteDetailDrawer({
         )}
       </div>
     );
-  };
+  }, [note.text, highlightText]);
 
   return (
     <div className="note-drawer-backdrop" onClick={handleBackdropClick}>
@@ -217,7 +216,7 @@ export function NoteDetailDrawer({
               autoFocus
             />
           ) : (
-            renderText()
+            highlightedContent
           )}
         </div>
 
@@ -293,8 +292,4 @@ export function NoteDetailDrawer({
       </div>
     </div>
   );
-}
-
-
-
-
+});

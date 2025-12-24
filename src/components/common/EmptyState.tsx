@@ -1,21 +1,19 @@
 /**
- * EmptyState component
- * Displays a friendly empty state with icon and message
- * Uses Tailwind utilities
+ * Friendly empty state display with icon and contextual message.
  */
 
 import { memo } from 'react';
-import type { LucideIcon } from 'lucide-react';
-import { FileText, Search } from 'lucide-react';
+import { FileText, Search, type LucideIcon } from 'lucide-react';
 
-interface EmptyStateProps {
-  /** Type of empty state */
-  type: 'no-notes' | 'no-search-results';
-  /** Custom message (optional) */
-  message?: string;
+export type EmptyStateType = 'no-notes' | 'no-search-results';
+
+interface EmptyStateConfig {
+  icon: LucideIcon;
+  title: string;
+  description: string;
 }
 
-const configs: Record<EmptyStateProps['type'], { icon: LucideIcon; title: string; description: string }> = {
+const EMPTY_STATE_CONFIG: Record<EmptyStateType, EmptyStateConfig> = {
   'no-notes': {
     icon: FileText,
     title: 'No notes yet',
@@ -24,13 +22,17 @@ const configs: Record<EmptyStateProps['type'], { icon: LucideIcon; title: string
   'no-search-results': {
     icon: Search,
     title: 'No results found',
-    description: 'Try adjusting your search or filter to find what you\'re looking for.',
+    description: "Try adjusting your search or filter to find what you're looking for.",
   },
 };
 
+interface EmptyStateProps {
+  type: EmptyStateType;
+  message?: string;
+}
+
 export const EmptyState = memo(function EmptyState({ type, message }: EmptyStateProps) {
-  const config = configs[type];
-  const Icon = config.icon;
+  const { icon: Icon, title, description } = EMPTY_STATE_CONFIG[type];
 
   return (
     <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
@@ -38,12 +40,11 @@ export const EmptyState = memo(function EmptyState({ type, message }: EmptyState
         <Icon size={32} strokeWidth={1.5} />
       </div>
       <h3 className="text-base font-semibold text-[var(--color-text)] mb-2">
-        {config.title}
+        {title}
       </h3>
       <p className="text-sm text-[var(--color-text-secondary)] max-w-[280px] leading-relaxed">
-        {message || config.description}
+        {message || description}
       </p>
     </div>
   );
 });
-

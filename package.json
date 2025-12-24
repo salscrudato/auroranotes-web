@@ -4,25 +4,24 @@
   "description": "AI-powered note-taking with conversational RAG",
   "private": true,
   "type": "module",
-  "sideEffects": false,
   "engines": {
     "node": ">=20.0.0"
   },
   "scripts": {
     "dev": "vite",
     "dev:emulator": "VITE_USE_FIREBASE_EMULATOR=true vite",
-    "emulators": "firebase emulators:start --only auth",
     "build": "tsc -b && vite build",
     "build:analyze": "vite build --mode analyze",
     "preview": "vite preview",
+    "typecheck": "tsc -b",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "typecheck": "tsc -b --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
     "validate": "npm run typecheck && npm run lint && npm run test:run",
+    "emulators": "firebase emulators:start --only auth",
     "clean": "rm -rf dist node_modules/.tmp node_modules/.vite"
   },
   "dependencies": {

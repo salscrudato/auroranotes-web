@@ -1,15 +1,37 @@
 /**
- * ConfirmDialog component
- * Modal dialog for confirming destructive actions
- * Uses new Tailwind-based UI components
+ * Modal dialog for confirming destructive or important actions.
  */
 
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
-import { Button } from '../ui/Button';
+import { Button, type ButtonVariant } from '../ui/Button';
 import { Dialog, DialogClose } from '../ui/Dialog';
+
+type ConfirmVariant = 'danger' | 'warning' | 'default';
+
+interface VariantConfig {
+  iconClasses: string;
+  buttonVariant: ButtonVariant;
+  buttonClassName?: string;
+}
+
+const VARIANT_CONFIG: Record<ConfirmVariant, VariantConfig> = {
+  danger: {
+    iconClasses: 'bg-[var(--color-danger-bg)] text-[var(--color-danger)]',
+    buttonVariant: 'danger',
+  },
+  warning: {
+    iconClasses: 'bg-[var(--color-warning-bg)] text-[var(--color-warning)]',
+    buttonVariant: 'default',
+    buttonClassName: 'bg-[var(--color-warning)] text-white hover:bg-amber-600',
+  },
+  default: {
+    iconClasses: 'bg-[var(--color-accent-subtle)] text-[var(--color-accent)]',
+    buttonVariant: 'primary',
+  },
+};
 
 interface ConfirmDialogProps {
   isOpen: boolean;
@@ -17,7 +39,7 @@ interface ConfirmDialogProps {
   message: string;
   confirmLabel?: string;
   cancelLabel?: string;
-  variant?: 'danger' | 'warning' | 'default';
+  variant?: ConfirmVariant;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -32,12 +54,13 @@ export const ConfirmDialog = memo(function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
-  // Use focus trap hook for proper focus management
   const dialogRef = useFocusTrap<HTMLDivElement>({
     enabled: isOpen,
     onEscape: onCancel,
     restoreFocus: true,
   });
+
+  const config = useMemo(() => VARIANT_CONFIG[variant], [variant]);
 
   return (
     <Dialog
@@ -49,18 +72,8 @@ export const ConfirmDialog = memo(function ConfirmDialog({
       <div ref={dialogRef} className="p-6 text-center">
         <DialogClose onClose={onCancel} />
 
-        {/* Icon */}
-        <div className={cn(
-          'mx-auto mb-4 w-12 h-12 rounded-full',
-          'flex items-center justify-center',
-          variant === 'danger' && 'bg-[var(--color-danger-bg)] text-[var(--color-danger)]',
-          variant === 'warning' && 'bg-[var(--color-warning-bg)] text-[var(--color-warning)]',
-          variant === 'default' && 'bg-[var(--color-accent-subtle)] text-[var(--color-accent)]'
-        )}>
-          <AlertTriangle size={24} />
-        </div>
+        <DialogIcon className={config.iconClasses} />
 
-        {/* Title */}
         <h3
           id="confirm-dialog-title"
           className="text-lg font-semibold text-[var(--color-text)] mb-2"
@@ -68,7 +81,6 @@ export const ConfirmDialog = memo(function ConfirmDialog({
           {title}
         </h3>
 
-        {/* Message */}
         <p
           id="confirm-dialog-message"
           className="text-sm text-[var(--color-text-secondary)] mb-6"
@@ -76,15 +88,14 @@ export const ConfirmDialog = memo(function ConfirmDialog({
           {message}
         </p>
 
-        {/* Actions */}
         <div className="flex items-center justify-center gap-3">
           <Button variant="default" onClick={onCancel}>
             {cancelLabel}
           </Button>
           <Button
-            variant={variant === 'danger' ? 'danger' : variant === 'default' ? 'primary' : 'default'}
+            variant={config.buttonVariant}
             onClick={onConfirm}
-            className={variant === 'warning' ? 'bg-[var(--color-warning)] text-white hover:bg-amber-600' : ''}
+            className={config.buttonClassName}
           >
             {confirmLabel}
           </Button>
@@ -94,3 +105,16 @@ export const ConfirmDialog = memo(function ConfirmDialog({
   );
 });
 
+/** Icon wrapper for the confirmation dialog */
+const DialogIcon = memo(function DialogIcon({ className }: { className: string }) {
+  return (
+    <div
+      className={cn(
+        'mx-auto mb-4 w-12 h-12 rounded-full flex items-center justify-center',
+        className
+      )}
+    >
+      <AlertTriangle size={24} />
+    </div>
+  );
+});

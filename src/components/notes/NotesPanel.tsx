@@ -1,10 +1,8 @@
 /**
- * NotesPanel component
- * Sticky composer, scrollable notes list, keyboard shortcuts, optimistic updates
- * Now with cursor-based pagination for 100k+ notes support
+ * Main notes panel with sticky composer, scrollable list, and cursor-based pagination.
  */
 
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef, memo } from 'react';
 import { Search, ArrowUp, Mic, X, Tag, FileText } from 'lucide-react';
 import type { Note } from '../../lib/types';
 import { normalizeNote, groupNotesByDate } from '../../lib/format';
@@ -29,7 +27,12 @@ interface NotesPanelProps {
   onNotesLoaded?: (notes: Note[], hasMore: boolean, loadMore: () => Promise<void>) => void;
 }
 
-export function NotesPanel({ className = '', highlightNoteId, onNoteHighlighted, onNotesLoaded }: NotesPanelProps) {
+export const NotesPanel = memo(function NotesPanel({
+  className = '',
+  highlightNoteId,
+  onNoteHighlighted,
+  onNotesLoaded,
+}: NotesPanelProps) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [pendingNotes, setPendingNotes] = useState<Note[]>([]);
   const [text, setText] = useState('');
@@ -727,5 +730,4 @@ export function NotesPanel({ className = '', highlightNoteId, onNoteHighlighted,
       />
     </div>
   );
-}
-
+});
