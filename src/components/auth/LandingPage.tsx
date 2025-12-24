@@ -3,9 +3,11 @@ import { Loader2, ArrowRight, Phone, ChevronLeft, PenLine, MessageCircle, Sparkl
 import { useAuth } from '@/auth/useAuth';
 import { GoogleIcon } from './GoogleIcon';
 import { formatPhoneNumber, toE164 } from '@/lib/utils';
+import { clearRecaptcha, initRecaptcha } from '@/lib/firebase';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const RESEND_COOLDOWN_SECONDS = 60;
+const OTP_LENGTH = 6;
 
 const STEPS = [
   { icon: PenLine, title: 'Capture', description: 'Jot down thoughts, ideas, and notes as they come to you.' },
@@ -23,17 +25,37 @@ export const LandingPage = memo(function LandingPage() {
   const [loading, setLoading] = useState(false);
   const [showPhoneInput, setShowPhoneInput] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [verificationCode, setVerificationCode] = useState('');
+  const [otpDigits, setOtpDigits] = useState<string[]>(Array(OTP_LENGTH).fill(''));
   const [resendCountdown, setResendCountdown] = useState(0);
   const [isResending, setIsResending] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const recaptchaContainerRef = useRef<HTMLDivElement>(null);
 
-  // Cleanup countdown on unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (countdownRef.current) clearInterval(countdownRef.current);
+      clearRecaptcha();
     };
   }, []);
+
+  // Initialize reCAPTCHA when phone input is shown
+  useEffect(() => {
+    if (showPhoneInput && !phoneVerificationPending) {
+      // Small delay to ensure container is visible
+      const timer = setTimeout(async () => {
+        try {
+          await initRecaptcha('recaptcha-container');
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.error('Failed to init reCAPTCHA:', e);
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [showPhoneInput, phoneVerificationPending]);
 
   // Start countdown when verification pending
   useEffect(() => {
@@ -50,6 +72,22 @@ export const LandingPage = memo(function LandingPage() {
       }, 1000);
     }
   }, [phoneVerificationPending, resendCountdown]);
+
+  // Auto-focus first OTP input when verification starts
+  useEffect(() => {
+    if (phoneVerificationPending) {
+      setTimeout(() => otpInputRefs.current[0]?.focus(), 100);
+    }
+  }, [phoneVerificationPending]);
+
+  // Auto-submit when OTP is complete
+  useEffect(() => {
+    const code = otpDigits.join('');
+    if (code.length === OTP_LENGTH && !isVerifying && !loading) {
+      handleVerifyCode();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [otpDigits, isVerifying, loading]);
 
   const withLoading = useCallback(async (fn: () => Promise<void>) => {
     setLoading(true);
@@ -75,16 +113,70 @@ export const LandingPage = memo(function LandingPage() {
     withLoading(() => startPhoneSignIn(toE164(phoneNumber)));
   }, [phoneNumber, startPhoneSignIn, withLoading]);
 
-  const handleVerifyCode = useCallback((e: React.FormEvent) => {
+  const handleVerifyCode = useCallback(async () => {
+    const code = otpDigits.join('');
+    if (code.length !== OTP_LENGTH || isVerifying) return;
+
+    setIsVerifying(true);
+    clearError();
+    try {
+      await verifyPhoneCode(code);
+    } catch {
+      // Error handled - clear OTP on error
+      setOtpDigits(Array(OTP_LENGTH).fill(''));
+      setTimeout(() => otpInputRefs.current[0]?.focus(), 100);
+    } finally {
+      setIsVerifying(false);
+    }
+  }, [otpDigits, isVerifying, verifyPhoneCode, clearError]);
+
+  const handleOtpChange = useCallback((index: number, value: string) => {
+    // Only allow digits
+    const digit = value.replace(/\D/g, '').slice(-1);
+
+    setOtpDigits(prev => {
+      const newDigits = [...prev];
+      newDigits[index] = digit;
+      return newDigits;
+    });
+
+    // Auto-advance to next input
+    if (digit && index < OTP_LENGTH - 1) {
+      otpInputRefs.current[index + 1]?.focus();
+    }
+  }, []);
+
+  const handleOtpKeyDown = useCallback((index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !otpDigits[index] && index > 0) {
+      // Move to previous input on backspace if current is empty
+      otpInputRefs.current[index - 1]?.focus();
+    } else if (e.key === 'ArrowLeft' && index > 0) {
+      otpInputRefs.current[index - 1]?.focus();
+    } else if (e.key === 'ArrowRight' && index < OTP_LENGTH - 1) {
+      otpInputRefs.current[index + 1]?.focus();
+    }
+  }, [otpDigits]);
+
+  const handleOtpPaste = useCallback((e: React.ClipboardEvent) => {
     e.preventDefault();
-    if (!verificationCode.trim()) return;
-    withLoading(() => verifyPhoneCode(verificationCode));
-  }, [verificationCode, verifyPhoneCode, withLoading]);
+    const pastedData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, OTP_LENGTH);
+    if (pastedData) {
+      const newDigits = Array(OTP_LENGTH).fill('');
+      pastedData.split('').forEach((digit, i) => {
+        newDigits[i] = digit;
+      });
+      setOtpDigits(newDigits);
+      // Focus the input after the last pasted digit
+      const focusIndex = Math.min(pastedData.length, OTP_LENGTH - 1);
+      otpInputRefs.current[focusIndex]?.focus();
+    }
+  }, []);
 
   const handleResendCode = useCallback(async () => {
     if (resendCountdown > 0 || isResending) return;
     setIsResending(true);
     clearError();
+    setOtpDigits(Array(OTP_LENGTH).fill(''));
     try {
       await startPhoneSignIn(toE164(phoneNumber));
       setResendCountdown(RESEND_COOLDOWN_SECONDS);
@@ -97,6 +189,7 @@ export const LandingPage = memo(function LandingPage() {
           return prev - 1;
         });
       }, 1000);
+      setTimeout(() => otpInputRefs.current[0]?.focus(), 100);
     } catch {
       // Error handled by AuthProvider
     } finally {
@@ -108,9 +201,10 @@ export const LandingPage = memo(function LandingPage() {
     if (countdownRef.current) clearInterval(countdownRef.current);
     setShowPhoneInput(false);
     setPhoneNumber('');
-    setVerificationCode('');
+    setOtpDigits(Array(OTP_LENGTH).fill(''));
     setResendCountdown(0);
     clearError();
+    clearRecaptcha();
   }, [clearError]);
 
   const BackButton = (
@@ -138,6 +232,12 @@ export const LandingPage = memo(function LandingPage() {
           </p>
 
           <div className="landing-auth">
+            {/* Invisible reCAPTCHA container */}
+            <div
+              id="recaptcha-container"
+              ref={recaptchaContainerRef}
+            />
+
             {!showPhoneInput && !phoneVerificationPending ? (
               <>
                 <button className="landing-auth-btn landing-auth-google" onClick={handleGoogleSignIn} disabled={loading} type="button">
@@ -151,25 +251,38 @@ export const LandingPage = memo(function LandingPage() {
                 </button>
               </>
             ) : phoneVerificationPending ? (
-              <form onSubmit={handleVerifyCode} className="landing-phone-form">
+              <div className="landing-phone-form">
                 {BackButton}
                 <p className="landing-phone-hint">Enter the 6-digit code sent to {phoneNumber}</p>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  className="landing-phone-input"
-                  placeholder="123456"
-                  value={verificationCode}
-                  onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  maxLength={6}
-                  autoFocus
-                  aria-label="Verification code"
-                />
-                <button type="submit" className="landing-auth-btn landing-auth-primary" disabled={loading || verificationCode.length < 6}>
-                  {loading ? <Loader2 size={20} className="spinner" /> : <ArrowRight size={20} />}
-                  <span>Verify Code</span>
-                </button>
+
+                {/* OTP Input Boxes */}
+                <div className="landing-otp-container" onPaste={handleOtpPaste}>
+                  {otpDigits.map((digit, index) => (
+                    <input
+                      key={index}
+                      ref={(el) => { otpInputRefs.current[index] = el; }}
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete={index === 0 ? 'one-time-code' : 'off'}
+                      className={`landing-otp-input ${digit ? 'filled' : ''} ${isVerifying ? 'verifying' : ''}`}
+                      value={digit}
+                      onChange={(e) => handleOtpChange(index, e.target.value)}
+                      onKeyDown={(e) => handleOtpKeyDown(index, e)}
+                      maxLength={1}
+                      disabled={isVerifying}
+                      aria-label={`Digit ${index + 1} of ${OTP_LENGTH}`}
+                    />
+                  ))}
+                </div>
+
+                {/* Verifying indicator */}
+                {isVerifying && (
+                  <div className="landing-verifying">
+                    <Loader2 size={16} className="spinner" />
+                    <span>Verifying...</span>
+                  </div>
+                )}
+
                 <button
                   type="button"
                   className="landing-resend-btn"
@@ -186,7 +299,7 @@ export const LandingPage = memo(function LandingPage() {
                     {resendCountdown > 0 ? `Resend in ${resendCountdown}s` : 'Resend Code'}
                   </span>
                 </button>
-              </form>
+              </div>
             ) : (
               <form onSubmit={handlePhoneSubmit} className="landing-phone-form">
                 {BackButton}
@@ -201,7 +314,12 @@ export const LandingPage = memo(function LandingPage() {
                   onChange={handlePhoneChange}
                   autoFocus
                 />
-                <button id="phone-sign-in-button" type="submit" className="landing-auth-btn landing-auth-primary" disabled={loading || phoneNumber.replace(/\D/g, '').length < 10}>
+                <button
+                  id="phone-sign-in-button"
+                  type="submit"
+                  className="landing-auth-btn landing-auth-primary"
+                  disabled={loading || phoneNumber.replace(/\D/g, '').length < 10}
+                >
                   {loading ? <Loader2 size={20} className="spinner" /> : <ArrowRight size={20} />}
                   <span>Send Code</span>
                 </button>

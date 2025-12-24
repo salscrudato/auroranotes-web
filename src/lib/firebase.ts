@@ -97,46 +97,65 @@ let phoneConfirmationResult: ConfirmationResult | null = null;
 
 // Store recaptcha verifier
 let recaptchaVerifier: RecaptchaVerifier | null = null;
+let recaptchaRendered = false;
 
 /**
- * Initialize invisible reCAPTCHA attached to a button
- * The reCAPTCHA will be solved automatically when the button is clicked
- * @param buttonId The ID of the submit button to attach reCAPTCHA to
+ * Initialize invisible reCAPTCHA attached to a container element
+ * @param containerIdOrElement The ID of the container element or the element itself
  */
-export function initRecaptcha(buttonId: string): RecaptchaVerifier {
+export async function initRecaptcha(containerIdOrElement: string | HTMLElement): Promise<RecaptchaVerifier> {
   const auth = getFirebaseAuth();
 
-  // Clear existing verifier
-  if (recaptchaVerifier) {
-    try {
-      recaptchaVerifier.clear();
-    } catch {
-      // Ignore errors when clearing
-    }
-    recaptchaVerifier = null;
-  }
+  // Clear existing verifier if any
+  await clearRecaptcha();
 
-  recaptchaVerifier = new RecaptchaVerifier(auth, buttonId, {
+  // Wait a tick to ensure DOM is ready
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  recaptchaVerifier = new RecaptchaVerifier(auth, containerIdOrElement, {
     size: 'invisible',
     callback: () => {
-      // reCAPTCHA solved - form will be submitted
+      // reCAPTCHA solved - this is called automatically
     },
     'expired-callback': () => {
-      // reCAPTCHA expired - reset
-      console.warn('reCAPTCHA expired, please try again');
-      if (recaptchaVerifier) {
-        recaptchaVerifier.render();
-      }
+      recaptchaRendered = false;
+    },
+    'error-callback': () => {
+      recaptchaRendered = false;
     },
   });
+
+  // Pre-render the reCAPTCHA
+  try {
+    await recaptchaVerifier.render();
+    recaptchaRendered = true;
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('[reCAPTCHA] Render warning:', e);
+    recaptchaRendered = true;
+  }
 
   return recaptchaVerifier;
 }
 
 /**
+ * Check if reCAPTCHA has been solved (always true for invisible)
+ */
+export function isRecaptchaSolved(): boolean {
+  return recaptchaRendered;
+}
+
+/**
+ * Check if reCAPTCHA is ready
+ */
+export function isRecaptchaReady(): boolean {
+  return recaptchaVerifier !== null && recaptchaRendered;
+}
+
+/**
  * Clear the reCAPTCHA verifier (call when unmounting)
  */
-export function clearRecaptcha(): void {
+export async function clearRecaptcha(): Promise<void> {
   if (recaptchaVerifier) {
     try {
       recaptchaVerifier.clear();
@@ -144,54 +163,72 @@ export function clearRecaptcha(): void {
       // Ignore errors when clearing
     }
     recaptchaVerifier = null;
+    recaptchaRendered = false;
   }
+
+  // Also clean up any lingering reCAPTCHA iframes
+  const recaptchaElements = document.querySelectorAll('.grecaptcha-badge, [id^="g-recaptcha"]');
+  recaptchaElements.forEach(el => el.remove());
 }
 
 /**
  * Start phone sign-in flow
  * @param phoneNumber Phone number in E.164 format (e.g., +14155551234)
- * @param buttonId The ID of the button to attach reCAPTCHA to
+ * @param containerId The ID of the container element for reCAPTCHA
  */
-export async function startPhoneSignIn(phoneNumber: string, buttonId: string): Promise<void> {
+export async function startPhoneSignIn(phoneNumber: string, containerId: string): Promise<void> {
   const auth = getFirebaseAuth();
-
-  // Initialize reCAPTCHA on the button if not already done (skip for emulator)
-  if (!recaptchaVerifier && !USE_AUTH_EMULATOR) {
-    initRecaptcha(buttonId);
-  }
 
   try {
     // For emulator, we need a mock verifier
     if (USE_AUTH_EMULATOR) {
-      // Create a simple mock ApplicationVerifier for the emulator
       const mockVerifier = {
         type: 'recaptcha' as const,
         verify: () => Promise.resolve('mock-recaptcha-token'),
       };
       phoneConfirmationResult = await signInWithPhoneNumber(auth, phoneNumber, mockVerifier);
     } else {
-      phoneConfirmationResult = await signInWithPhoneNumber(auth, phoneNumber, recaptchaVerifier!);
+      // Initialize reCAPTCHA if not ready
+      if (!recaptchaVerifier || !recaptchaRendered) {
+        // eslint-disable-next-line no-console
+        console.log('[Phone Auth] Initializing reCAPTCHA for container:', containerId);
+        await initRecaptcha(containerId);
+      }
+
+      if (!recaptchaVerifier) {
+        throw new Error('Failed to initialize verification. Please refresh and try again.');
+      }
+
+      // eslint-disable-next-line no-console
+      console.log('[Phone Auth] Sending verification to:', phoneNumber);
+      phoneConfirmationResult = await signInWithPhoneNumber(auth, phoneNumber, recaptchaVerifier);
+      // eslint-disable-next-line no-console
+      console.log('[Phone Auth] Verification code sent successfully');
     }
   } catch (error: unknown) {
     const firebaseError = error as { code?: string; message?: string };
 
+    // eslint-disable-next-line no-console
+    console.error('[Phone Auth] Error:', firebaseError.code, firebaseError.message);
+
+    // Reset reCAPTCHA on error for retry
+    await clearRecaptcha();
+
     // Provide user-friendly error messages
     if (firebaseError.code === 'auth/invalid-phone-number') {
-      throw new Error('Invalid phone number format. Please enter a valid US phone number.');
+      throw new Error('Please enter a valid phone number.');
     } else if (firebaseError.code === 'auth/too-many-requests') {
-      throw new Error('Too many attempts. Please wait a few minutes and try again.');
+      throw new Error('Too many attempts. Please wait a few minutes.');
     } else if (firebaseError.code === 'auth/captcha-check-failed') {
-      throw new Error('reCAPTCHA verification failed. Please try again.');
+      throw new Error('Verification failed. Please try again.');
     } else if (firebaseError.code === 'auth/quota-exceeded') {
-      throw new Error('SMS quota exceeded. Please try again later or use Google sign-in.');
-    } else if (firebaseError.message?.includes('400')) {
-      // This is the error we're seeing - provide helpful guidance
-      throw new Error(
-        'Phone authentication is not configured. Please ensure:\n' +
-        '1. Phone auth is enabled in Firebase Console → Authentication → Sign-in method\n' +
-        '2. localhost is in authorized domains\n' +
-        'Or use Google sign-in instead.'
-      );
+      throw new Error('SMS limit reached. Try Google sign-in instead.');
+    } else if (firebaseError.code === 'auth/network-request-failed') {
+      throw new Error('Network error. Please check your connection.');
+    } else if (firebaseError.code === 'auth/operation-not-allowed') {
+      throw new Error('Phone sign-in is not enabled. Please use Google sign-in.');
+    } else if (firebaseError.message?.includes('400') || firebaseError.message?.includes('OPERATION_NOT_ALLOWED')) {
+      throw new Error('Phone sign-in unavailable. Please use Google sign-in.');
     }
     throw error;
   }
@@ -203,12 +240,25 @@ export async function startPhoneSignIn(phoneNumber: string, buttonId: string): P
  */
 export async function verifyPhoneCode(code: string): Promise<User> {
   if (!phoneConfirmationResult) {
-    throw new Error('No pending phone verification. Call startPhoneSignIn() first.');
+    throw new Error('Verification expired. Please request a new code.');
   }
-  
-  const result = await phoneConfirmationResult.confirm(code);
-  phoneConfirmationResult = null;
-  return result.user;
+
+  try {
+    const result = await phoneConfirmationResult.confirm(code);
+    phoneConfirmationResult = null;
+    await clearRecaptcha();
+    return result.user;
+  } catch (error: unknown) {
+    const firebaseError = error as { code?: string; message?: string };
+
+    if (firebaseError.code === 'auth/invalid-verification-code') {
+      throw new Error('Invalid code. Please check and try again.');
+    } else if (firebaseError.code === 'auth/code-expired') {
+      phoneConfirmationResult = null;
+      throw new Error('Code expired. Please request a new one.');
+    }
+    throw error;
+  }
 }
 
 /**

@@ -8610,6 +8610,32 @@ mark.highlight {
   background: var(--color-accent-subtle);
 }
 
+.landing-otp-input.verifying {
+  opacity: 0.7;
+  pointer-events: none;
+  animation: otpPulse 1s ease-in-out infinite;
+}
+
+@keyframes otpPulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 0.4; }
+}
+
+/* Verifying Indicator */
+.landing-verifying {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  padding: var(--space-2) 0;
+}
+
+.landing-verifying .spinner {
+  animation: spin 1s linear infinite;
+}
+
 /* Error Message - Clean */
 .landing-error {
   display: flex;
@@ -8722,6 +8748,18 @@ mark.highlight {
 
   .landing-step-desc {
     font-size: var(--text-xs);
+  }
+
+  /* OTP inputs - smaller on mobile */
+  .landing-otp-container {
+    gap: var(--space-2);
+  }
+
+  .landing-otp-input {
+    width: 44px;
+    height: 56px;
+    font-size: 22px;
+    border-radius: var(--radius-md);
   }
 
   /* Reduce animation intensity on mobile for performance */

@@ -67,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const startPhoneSignIn = useCallback(async (phoneE164: string) => {
     setError(null);
     try {
-      await firebaseStartPhoneSignIn(phoneE164, 'phone-sign-in-button');
+      await firebaseStartPhoneSignIn(phoneE164, 'recaptcha-container');
       setPhoneVerificationPending(true);
     } catch (err) {
       setError(toAuthError(err, 'Failed to send verification code'));
