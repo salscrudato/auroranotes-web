@@ -34,3 +34,6 @@ export {
 export { useSavedViews } from './useSavedViews';
 export { usePinnedNotes } from './usePinnedNotes';
 export { useChatFilters } from './useChatFilters';
+
+// Real-time sync
+export { useRealtimeSync } from './useRealtimeSync';

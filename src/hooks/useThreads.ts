@@ -49,6 +49,7 @@ function saveLocalThreads(threads: LocalThread[]): void {
 
 /**
  * Hook for thread list with pagination
+ * Includes background polling for real-time updates
  */
 export function useThreadsList() {
   const [useLocalFallback, setUseLocalFallback] = useState(false);
@@ -61,9 +62,12 @@ export function useThreadsList() {
       return response;
     },
     initialPageParam: undefined as string | undefined,
-    getNextPageParam: (lastPage) => 
+    getNextPageParam: (lastPage) =>
       lastPage.hasMore ? lastPage.cursor ?? undefined : undefined,
     retry: 1,
+    // Background polling every 60 seconds for real-time updates
+    refetchInterval: 60 * 1000,
+    refetchIntervalInBackground: false,
   });
 
   // Switch to local fallback on persistent errors

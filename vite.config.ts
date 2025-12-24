@@ -16,7 +16,14 @@ export default defineConfig({
   server: {
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin-allow-popups', // Firebase Auth popup
+      'Cross-Origin-Embedder-Policy': 'unsafe-none', // Allow cross-origin resources
     },
+    // Fix WebSocket HMR connection issues
+    hmr: true, // Use default HMR settings (auto-detect)
+    // Alternatively, if still failing, uncomment:
+    // hmr: {
+    //   port: 5173,
+    // },
   },
 
   test: {

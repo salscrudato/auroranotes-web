@@ -1,6 +1,11 @@
 /**
  * React Query client configuration
  * Centralized query client with sensible defaults
+ *
+ * Real-time update strategy:
+ * - refetchOnWindowFocus: true - Ensures fresh data when user returns to tab
+ * - Hooks set refetchInterval for background polling
+ * - Firestore real-time listeners trigger invalidations for instant updates
  */
 
 import { QueryClient } from '@tanstack/react-query';
@@ -8,14 +13,16 @@ import { QueryClient } from '@tanstack/react-query';
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // Stale after 1 minute
-      staleTime: 60 * 1000,
+      // Stale after 30 seconds (more aggressive for real-time feel)
+      staleTime: 30 * 1000,
       // Cache for 5 minutes
       gcTime: 5 * 60 * 1000,
       // Retry once on failure
       retry: 1,
-      // Don't refetch on window focus by default
-      refetchOnWindowFocus: false,
+      // Refetch when user returns to the tab
+      refetchOnWindowFocus: true,
+      // Refetch when network reconnects
+      refetchOnReconnect: true,
     },
     mutations: {
       // Retry once on failure

@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react';
 
 /**
  * Hook for fetching user's tags
+ * Includes background polling for real-time updates
  */
 export function useTags() {
   const [useLocalFallback, setUseLocalFallback] = useState(false);
@@ -21,6 +22,9 @@ export function useTags() {
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
     retry: 1,
+    // Tags change less frequently, poll every 2 minutes
+    refetchInterval: 2 * 60 * 1000,
+    refetchIntervalInBackground: false,
   });
 
   // Switch to empty fallback on persistent errors (endpoint not available)

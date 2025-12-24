@@ -1,0 +1,83 @@
+rules_version = '2';
+
+/**
+ * Firestore Security Rules for AuroraNotes
+ * 
+ * These rules ensure:
+ * 1. Users can only read/write their own data (tenantId = auth.uid)
+ * 2. All operations require authentication
+ * 3. Write operations go through the API (admin SDK bypasses rules)
+ * 4. Client-side reads are allowed for real-time sync
+ */
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user owns the document (tenantId matches their uid)
+    function isOwner() {
+      return isAuthenticated() && resource.data.tenantId == request.auth.uid;
+    }
+    
+    // Helper function for new documents - check if tenantId will be set to user's uid
+    function willBeOwner() {
+      return isAuthenticated() && request.resource.data.tenantId == request.auth.uid;
+    }
+
+    // Notes collection
+    // - Read: Users can read their own notes (for real-time sync)
+    // - Write: Handled by API server (admin SDK bypasses these rules)
+    match /notes/{noteId} {
+      // Allow read if user owns the document
+      allow read: if isOwner();
+      
+      // Allow writes only if setting correct tenantId
+      // In practice, writes go through the API with admin SDK
+      allow create: if willBeOwner();
+      allow update: if isOwner() && willBeOwner();
+      allow delete: if isOwner();
+    }
+    
+    // Threads collection (chat conversations)
+    // - Read: Users can read their own threads (for real-time sync)
+    // - Write: Handled by API server (admin SDK bypasses these rules)
+    match /threads/{threadId} {
+      allow read: if isOwner();
+      allow create: if willBeOwner();
+      allow update: if isOwner() && willBeOwner();
+      allow delete: if isOwner();
+    }
+    
+    // Note chunks collection (for RAG/embeddings)
+    // - Read: Users can read chunks for their notes
+    // - Write: Handled by API server only
+    match /noteChunks/{chunkId} {
+      allow read: if isAuthenticated() && resource.data.tenantId == request.auth.uid;
+      // No client writes - all chunk operations go through API
+      allow write: if false;
+    }
+    
+    // Feedback collection
+    // - Read: Users can read their own feedback
+    // - Write: Handled by API server
+    match /feedback/{feedbackId} {
+      allow read: if isOwner();
+      allow write: if false;
+    }
+    
+    // Tags collection (if using separate tags collection)
+    match /tags/{tagId} {
+      allow read: if isOwner();
+      allow write: if false;
+    }
+    
+    // Deny all other access by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

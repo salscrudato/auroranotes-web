@@ -20,6 +20,7 @@ import { getStorageUserId } from '../lib/scopedStorage';
 
 /**
  * Hook for paginated notes list with infinite scroll
+ * Includes background polling for real-time updates
  */
 export function useNotesInfinite(pageSize = 50) {
   return useInfiniteQuery({
@@ -33,9 +34,13 @@ export function useNotesInfinite(pageSize = 50) {
       };
     },
     initialPageParam: undefined as string | undefined,
-    getNextPageParam: (lastPage) => 
+    getNextPageParam: (lastPage) =>
       lastPage.hasMore ? lastPage.cursor ?? undefined : undefined,
     staleTime: 30 * 1000, // 30 seconds
+    // Background polling every 60 seconds for real-time updates
+    refetchInterval: 60 * 1000,
+    // Continue polling even when tab is in background
+    refetchIntervalInBackground: false, // Save bandwidth when not visible
   });
 }
 

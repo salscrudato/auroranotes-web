@@ -2,6 +2,7 @@ import { useLayoutEffect, useState, useEffect, type ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/auth/useAuth';
 import { setTokenGetter } from '@/lib/api';
+import { useRealtimeSync } from '@/hooks/useRealtimeSync';
 import { LandingPage } from './LandingPage';
 import { TermsOfService, PrivacyPolicy } from '@/components/legal';
 
@@ -28,6 +29,10 @@ export function AuthenticatedApp({ children }: { children: ReactNode }) {
   useLayoutEffect(() => {
     setTokenGetter(getToken);
   }, [getToken]);
+
+  // Enable Firestore real-time sync for authenticated users
+  // This listens to changes in notes/threads and invalidates React Query cache
+  useRealtimeSync(user?.uid ?? null, !!user);
 
   // Legal pages are accessible without authentication
   if (path === '/terms') {
