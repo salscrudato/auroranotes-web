@@ -10,6 +10,9 @@ import { sendChatMessage, sendChatMessageStreaming, ApiRequestError } from '../l
 import { CHAT } from '../lib/constants';
 import { ScopedStorageKeys, getScopedItem, setScopedItem, removeScopedItem, getStorageUserId } from '../lib/scopedStorage';
 
+// Token buffering for performance - batch updates using requestAnimationFrame
+const TOKEN_BUFFER_INTERVAL = 16; // ~60fps, matches rAF
+
 export type ChatLoadingState = 'idle' | 'sending' | 'streaming' | 'error';
 
 interface UseChatOptions {
@@ -95,6 +98,10 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
   // Ref to track the current streaming message ID
   const streamingMessageIdRef = useRef<string | null>(null);
 
+  // Token buffering for batched updates during streaming
+  const tokenBufferRef = useRef<string>('');
+  const tokenFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Persist messages to localStorage
   useEffect(() => {
     saveChatHistory(messages);
@@ -102,15 +109,26 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
 
   // Cancel any active stream
   const cancelStream = useCallback(() => {
+    // Clear token buffer timer
+    if (tokenFlushTimerRef.current) {
+      clearTimeout(tokenFlushTimerRef.current);
+      tokenFlushTimerRef.current = null;
+    }
+    // Flush any remaining buffered tokens
+    const remainingTokens = tokenBufferRef.current;
+    tokenBufferRef.current = '';
+
     if (streamControllerRef.current) {
       streamControllerRef.current.abort();
       streamControllerRef.current = null;
     }
     if (streamingMessageIdRef.current) {
-      // Mark streaming message as complete
+      // Mark streaming message as complete with any remaining tokens
       setMessages(prev =>
         prev.map(m =>
-          m.id === streamingMessageIdRef.current ? { ...m, isStreaming: false } : m
+          m.id === streamingMessageIdRef.current
+            ? { ...m, content: m.content + remainingTokens, isStreaming: false }
+            : m
         )
       );
       streamingMessageIdRef.current = null;
@@ -178,21 +196,42 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
             );
           },
           onToken: (token) => {
-            // Append token to content
-            setMessages(prev =>
-              prev.map(m =>
-                m.id === assistantMessageId
-                  ? { ...m, content: m.content + token }
-                  : m
-              )
-            );
+            // Buffer tokens and flush periodically for better performance
+            // This reduces re-renders from potentially 100s/sec to ~60/sec
+            tokenBufferRef.current += token;
+
+            if (!tokenFlushTimerRef.current) {
+              tokenFlushTimerRef.current = setTimeout(() => {
+                const bufferedContent = tokenBufferRef.current;
+                tokenBufferRef.current = '';
+                tokenFlushTimerRef.current = null;
+
+                if (bufferedContent) {
+                  setMessages(prev =>
+                    prev.map(m =>
+                      m.id === assistantMessageId
+                        ? { ...m, content: m.content + bufferedContent }
+                        : m
+                    )
+                  );
+                }
+              }, TOKEN_BUFFER_INTERVAL);
+            }
           },
           onDone: (meta) => {
-            // Finalize message with meta
+            // Flush any remaining buffered tokens before finalizing
+            if (tokenFlushTimerRef.current) {
+              clearTimeout(tokenFlushTimerRef.current);
+              tokenFlushTimerRef.current = null;
+            }
+            const remainingTokens = tokenBufferRef.current;
+            tokenBufferRef.current = '';
+
+            // Finalize message with meta and any remaining tokens
             setMessages(prev =>
               prev.map(m =>
                 m.id === assistantMessageId
-                  ? { ...m, meta, isStreaming: false }
+                  ? { ...m, content: m.content + remainingTokens, meta, isStreaming: false }
                   : m
               )
             );

@@ -2752,6 +2752,9 @@ h1, h2, h3, h4, h5, h6 {
   margin: 0;
   border: 1px solid var(--color-border);
   transition: border-color var(--transition-fast), background var(--transition-fast);
+  /* Performance: skip rendering of off-screen cards */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 100px;
 }
 
 @media (min-width: 640px) {

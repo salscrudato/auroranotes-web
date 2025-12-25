@@ -3,15 +3,13 @@
  * Manages cross-pane communication for note highlighting from chat citations.
  */
 
-import { useState, useCallback, useRef, useMemo, useEffect, memo } from 'react';
+import { useState, useCallback, useRef, useMemo, useEffect, memo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { Sparkles, FileText, LogOut, Plus, MessageSquare, Search, User } from 'lucide-react';
 import { useAuth, getUserInitials } from '../../auth';
 import { useToast } from '../common/useToast';
 import { ErrorBoundary } from '../common/ErrorBoundary';
 import { PanelFallback } from '../common/PanelFallback';
-import { NotesPanel } from '../notes/NotesPanel';
-import { ChatPanel } from '../chat/ChatPanel';
 import { NoteDetailDrawer } from '../notes/NoteDetailDrawer';
 import { SkipLink } from '../common/SkipLink';
 import { OfflineBanner } from '../common/OfflineBanner';
@@ -21,6 +19,10 @@ import { MobileBottomNav } from './MobileBottomNav';
 import { createNote } from '../../lib/api';
 import { normalizeNote } from '../../lib/format';
 import type { Note } from '../../lib/types';
+
+// Lazy load panels for better initial bundle size and code splitting
+const NotesPanel = lazy(() => import('../notes/NotesPanel').then(m => ({ default: m.NotesPanel })));
+const ChatPanel = lazy(() => import('../chat/ChatPanel').then(m => ({ default: m.ChatPanel })));
 
 type Tab = 'notes' | 'chat';
 
@@ -300,19 +302,23 @@ export function AppShell() {
         {/* Main Grid */}
         <main id="main-content" className="main-grid" tabIndex={-1}>
           <ErrorBoundary fallback={<PanelFallback title="Notes" onRetry={() => window.location.reload()} />}>
-            <NotesPanel
-              className={activeTab !== 'notes' ? 'hidden' : ''}
-              highlightNoteId={highlightNoteId}
-              onNoteHighlighted={handleNoteHighlighted}
-              onNotesLoaded={handleNotesLoaded}
-              onRegisterAddNote={(addNote) => { addNoteToListRef.current = addNote; }}
-            />
+            <Suspense fallback={<PanelFallback title="Notes" />}>
+              <NotesPanel
+                className={activeTab !== 'notes' ? 'hidden' : ''}
+                highlightNoteId={highlightNoteId}
+                onNoteHighlighted={handleNoteHighlighted}
+                onNotesLoaded={handleNotesLoaded}
+                onRegisterAddNote={(addNote) => { addNoteToListRef.current = addNote; }}
+              />
+            </Suspense>
           </ErrorBoundary>
           <ErrorBoundary fallback={<PanelFallback title="Chat" onRetry={() => window.location.reload()} />}>
-            <ChatPanel
-              className={activeTab !== 'chat' ? 'hidden' : ''}
-              onOpenNote={handleOpenNote}
-            />
+            <Suspense fallback={<PanelFallback title="Chat" />}>
+              <ChatPanel
+                className={activeTab !== 'chat' ? 'hidden' : ''}
+                onOpenNote={handleOpenNote}
+              />
+            </Suspense>
           </ErrorBoundary>
         </main>
 

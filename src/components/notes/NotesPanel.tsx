@@ -2,7 +2,7 @@
  * Main notes panel with sticky composer, scrollable list, and cursor-based pagination.
  */
 
-import { useState, useMemo, useCallback, useEffect, useRef, memo } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef, memo, useDeferredValue } from 'react';
 import { Search, ArrowUp, X, Tag, FileText } from 'lucide-react';
 import type { Note } from '../../lib/types';
 import { normalizeNote, groupNotesByDate } from '../../lib/format';
@@ -443,10 +443,14 @@ export const NotesPanel = memo(function NotesPanel({
       .map(s => s.note);
   }, [pendingNotes, notes, debouncedSearch]);
 
+  // Use deferred value to prevent search filtering from blocking input
+  // This allows the UI to remain responsive during expensive filtering
+  const deferredFilteredNotes = useDeferredValue(filteredNotes);
+
   // Group notes by date (Apple Notes style)
   const groupedNotes = useMemo(() => {
-    return groupNotesByDate(filteredNotes);
-  }, [filteredNotes]);
+    return groupNotesByDate(deferredFilteredNotes);
+  }, [deferredFilteredNotes]);
 
   const isFiltered = debouncedSearch.length > 0;
 

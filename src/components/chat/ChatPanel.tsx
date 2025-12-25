@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, memo } from 'react';
 import { ArrowUp, Square, Clock, Sparkles, Mic } from 'lucide-react';
 import type { ChatMessage as ChatMessageType, Source, FeedbackRating } from '@/lib/types';
 import { useChat } from '@/hooks/useChat';
@@ -16,7 +16,7 @@ interface ChatPanelProps {
 
 const MAX_MESSAGE_LENGTH = 2000;
 
-export function ChatPanel({ className = '', onOpenNote }: ChatPanelProps) {
+export const ChatPanel = memo(function ChatPanel({ className = '', onOpenNote }: ChatPanelProps) {
   const { messages, loadingState, sendMessage, retryLastMessage, clearChat, cancelStream } = useChat({ streaming: true });
   const { showToast } = useToast();
 
@@ -369,5 +369,5 @@ export function ChatPanel({ className = '', onOpenNote }: ChatPanelProps) {
       </div>
     </div>
   );
-}
+});
 
