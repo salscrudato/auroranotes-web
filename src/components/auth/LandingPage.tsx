@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, memo } from 'react';
-import { Loader2, ArrowRight, Phone, ChevronLeft, PenLine, MessageCircle, Sparkles, Shield, Lock, RefreshCw } from 'lucide-react';
+import { Loader2, Phone, ChevronLeft, PenLine, MessageCircle, Sparkles, Shield, Lock, RefreshCw, CheckCircle2, ArrowRight } from 'lucide-react';
 import { useAuth } from '@/auth/useAuth';
 import { GoogleIcon } from './GoogleIcon';
 import { formatPhoneNumber, toE164 } from '@/lib/utils';
@@ -8,6 +8,11 @@ import { clearRecaptcha, initRecaptcha } from '@/lib/firebase';
 const CURRENT_YEAR = new Date().getFullYear();
 const RESEND_COOLDOWN_SECONDS = 60;
 const OTP_LENGTH = 6;
+
+// Type for Web OTP API
+interface OTPCredential extends Credential {
+  code: string;
+}
 
 const STEPS = [
   { icon: PenLine, title: 'Capture', description: 'Jot down thoughts, ideas, and notes as they come to you.' },
@@ -25,18 +30,26 @@ export const LandingPage = memo(function LandingPage() {
   const [loading, setLoading] = useState(false);
   const [showPhoneInput, setShowPhoneInput] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [otpDigits, setOtpDigits] = useState<string[]>(Array(OTP_LENGTH).fill(''));
+  const [otpValue, setOtpValue] = useState('');
+  const [focusedIndex, setFocusedIndex] = useState(0);
   const [resendCountdown, setResendCountdown] = useState(0);
   const [isResending, setIsResending] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [verifySuccess, setVerifySuccess] = useState(false);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const hiddenInputRef = useRef<HTMLInputElement>(null);
+  const otpContainerRef = useRef<HTMLDivElement>(null);
   const recaptchaContainerRef = useRef<HTMLDivElement>(null);
+  const webOtpAbortRef = useRef<AbortController | null>(null);
+
+  // Convert OTP string to array of digits for display
+  const otpDigits = otpValue.padEnd(OTP_LENGTH, '').split('').slice(0, OTP_LENGTH);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (countdownRef.current) clearInterval(countdownRef.current);
+      if (webOtpAbortRef.current) webOtpAbortRef.current.abort();
       clearRecaptcha();
     };
   }, []);
@@ -44,12 +57,10 @@ export const LandingPage = memo(function LandingPage() {
   // Initialize reCAPTCHA when phone input is shown
   useEffect(() => {
     if (showPhoneInput && !phoneVerificationPending) {
-      // Small delay to ensure container is visible
       const timer = setTimeout(async () => {
         try {
           await initRecaptcha('recaptcha-container');
         } catch (e) {
-          // eslint-disable-next-line no-console
           console.error('Failed to init reCAPTCHA:', e);
         }
       }, 100);
@@ -73,21 +84,42 @@ export const LandingPage = memo(function LandingPage() {
     }
   }, [phoneVerificationPending, resendCountdown]);
 
-  // Auto-focus first OTP input when verification starts
+  // Auto-focus hidden input when verification starts + Web OTP API
   useEffect(() => {
     if (phoneVerificationPending) {
-      setTimeout(() => otpInputRefs.current[0]?.focus(), 100);
+      // Focus the hidden input for autofill
+      setTimeout(() => hiddenInputRef.current?.focus(), 100);
+
+      // Try Web OTP API (Chrome on Android)
+      if ('OTPCredential' in window) {
+        webOtpAbortRef.current = new AbortController();
+        navigator.credentials.get({
+          // @ts-expect-error - Web OTP API types not in TS lib
+          otp: { transport: ['sms'] },
+          signal: webOtpAbortRef.current.signal,
+        }).then((credential: Credential | null) => {
+          if (credential && 'code' in credential) {
+            const otpCred = credential as OTPCredential;
+            setOtpValue(otpCred.code.slice(0, OTP_LENGTH));
+          }
+        }).catch(() => {
+          // Web OTP not available or user denied - that's fine
+        });
+      }
     }
+
+    return () => {
+      if (webOtpAbortRef.current) webOtpAbortRef.current.abort();
+    };
   }, [phoneVerificationPending]);
 
   // Auto-submit when OTP is complete
   useEffect(() => {
-    const code = otpDigits.join('');
-    if (code.length === OTP_LENGTH && !isVerifying && !loading) {
+    if (otpValue.length === OTP_LENGTH && !isVerifying && !loading && !verifySuccess) {
       handleVerifyCode();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [otpDigits, isVerifying, loading]);
+  }, [otpValue, isVerifying, loading, verifySuccess]);
 
   const withLoading = useCallback(async (fn: () => Promise<void>) => {
     setLoading(true);
@@ -114,69 +146,50 @@ export const LandingPage = memo(function LandingPage() {
   }, [phoneNumber, startPhoneSignIn, withLoading]);
 
   const handleVerifyCode = useCallback(async () => {
-    const code = otpDigits.join('');
-    if (code.length !== OTP_LENGTH || isVerifying) return;
+    if (otpValue.length !== OTP_LENGTH || isVerifying) return;
 
     setIsVerifying(true);
     clearError();
     try {
-      await verifyPhoneCode(code);
+      await verifyPhoneCode(otpValue);
+      setVerifySuccess(true);
     } catch {
-      // Error handled - clear OTP on error
-      setOtpDigits(Array(OTP_LENGTH).fill(''));
-      setTimeout(() => otpInputRefs.current[0]?.focus(), 100);
+      // Error handled - clear OTP on error with shake animation
+      setOtpValue('');
+      setFocusedIndex(0);
+      setTimeout(() => hiddenInputRef.current?.focus(), 100);
     } finally {
       setIsVerifying(false);
     }
-  }, [otpDigits, isVerifying, verifyPhoneCode, clearError]);
+  }, [otpValue, isVerifying, verifyPhoneCode, clearError]);
 
-  const handleOtpChange = useCallback((index: number, value: string) => {
-    // Only allow digits
-    const digit = value.replace(/\D/g, '').slice(-1);
-
-    setOtpDigits(prev => {
-      const newDigits = [...prev];
-      newDigits[index] = digit;
-      return newDigits;
-    });
-
-    // Auto-advance to next input
-    if (digit && index < OTP_LENGTH - 1) {
-      otpInputRefs.current[index + 1]?.focus();
-    }
+  // Handle hidden input change (captures SMS autofill)
+  const handleHiddenInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/\D/g, '').slice(0, OTP_LENGTH);
+    setOtpValue(value);
+    setFocusedIndex(Math.min(value.length, OTP_LENGTH - 1));
   }, []);
 
-  const handleOtpKeyDown = useCallback((index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Backspace' && !otpDigits[index] && index > 0) {
-      // Move to previous input on backspace if current is empty
-      otpInputRefs.current[index - 1]?.focus();
-    } else if (e.key === 'ArrowLeft' && index > 0) {
-      otpInputRefs.current[index - 1]?.focus();
-    } else if (e.key === 'ArrowRight' && index < OTP_LENGTH - 1) {
-      otpInputRefs.current[index + 1]?.focus();
+  // Handle key events on hidden input
+  const handleHiddenInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && otpValue.length > 0) {
+      setOtpValue(prev => prev.slice(0, -1));
+      setFocusedIndex(Math.max(0, otpValue.length - 1));
     }
-  }, [otpDigits]);
+  }, [otpValue]);
 
-  const handleOtpPaste = useCallback((e: React.ClipboardEvent) => {
-    e.preventDefault();
-    const pastedData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, OTP_LENGTH);
-    if (pastedData) {
-      const newDigits = Array(OTP_LENGTH).fill('');
-      pastedData.split('').forEach((digit, i) => {
-        newDigits[i] = digit;
-      });
-      setOtpDigits(newDigits);
-      // Focus the input after the last pasted digit
-      const focusIndex = Math.min(pastedData.length, OTP_LENGTH - 1);
-      otpInputRefs.current[focusIndex]?.focus();
-    }
+  // Handle clicking on a digit box - focus the hidden input
+  const handleDigitClick = useCallback((index: number) => {
+    setFocusedIndex(index);
+    hiddenInputRef.current?.focus();
   }, []);
 
   const handleResendCode = useCallback(async () => {
     if (resendCountdown > 0 || isResending) return;
     setIsResending(true);
     clearError();
-    setOtpDigits(Array(OTP_LENGTH).fill(''));
+    setOtpValue('');
+    setFocusedIndex(0);
     try {
       await startPhoneSignIn(toE164(phoneNumber));
       setResendCountdown(RESEND_COOLDOWN_SECONDS);
@@ -189,7 +202,7 @@ export const LandingPage = memo(function LandingPage() {
           return prev - 1;
         });
       }, 1000);
-      setTimeout(() => otpInputRefs.current[0]?.focus(), 100);
+      setTimeout(() => hiddenInputRef.current?.focus(), 100);
     } catch {
       // Error handled by AuthProvider
     } finally {
@@ -199,10 +212,13 @@ export const LandingPage = memo(function LandingPage() {
 
   const handleBackToOptions = useCallback(() => {
     if (countdownRef.current) clearInterval(countdownRef.current);
+    if (webOtpAbortRef.current) webOtpAbortRef.current.abort();
     setShowPhoneInput(false);
     setPhoneNumber('');
-    setOtpDigits(Array(OTP_LENGTH).fill(''));
+    setOtpValue('');
+    setFocusedIndex(0);
     setResendCountdown(0);
+    setVerifySuccess(false);
     clearError();
     clearRecaptcha();
   }, [clearError]);
@@ -253,52 +269,96 @@ export const LandingPage = memo(function LandingPage() {
             ) : phoneVerificationPending ? (
               <div className="landing-phone-form">
                 {BackButton}
-                <p className="landing-phone-hint">Enter the 6-digit code sent to {phoneNumber}</p>
+                <p className="landing-phone-hint">
+                  {verifySuccess ? 'Code verified!' : `Enter the 6-digit code sent to ${phoneNumber}`}
+                </p>
 
-                {/* OTP Input Boxes */}
-                <div className="landing-otp-container" onPaste={handleOtpPaste}>
-                  {otpDigits.map((digit, index) => (
-                    <input
-                      key={index}
-                      ref={(el) => { otpInputRefs.current[index] = el; }}
-                      type="text"
-                      inputMode="numeric"
-                      autoComplete={index === 0 ? 'one-time-code' : 'off'}
-                      className={`landing-otp-input ${digit ? 'filled' : ''} ${isVerifying ? 'verifying' : ''}`}
-                      value={digit}
-                      onChange={(e) => handleOtpChange(index, e.target.value)}
-                      onKeyDown={(e) => handleOtpKeyDown(index, e)}
-                      maxLength={1}
-                      disabled={isVerifying}
-                      aria-label={`Digit ${index + 1} of ${OTP_LENGTH}`}
-                    />
-                  ))}
+                {/* Hidden input for SMS autofill - this is the key for proper autofill! */}
+                <input
+                  ref={hiddenInputRef}
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  className="landing-otp-hidden-input"
+                  value={otpValue}
+                  onChange={handleHiddenInputChange}
+                  onKeyDown={handleHiddenInputKeyDown}
+                  maxLength={OTP_LENGTH}
+                  disabled={isVerifying || verifySuccess}
+                  aria-label="Enter verification code"
+                  autoFocus
+                />
+
+                {/* Visual OTP Boxes - these are just for display */}
+                <div
+                  ref={otpContainerRef}
+                  className={`landing-otp-container ${error ? 'shake' : ''} ${verifySuccess ? 'success' : ''}`}
+                  onClick={() => hiddenInputRef.current?.focus()}
+                  role="group"
+                  aria-label="Verification code"
+                >
+                  {otpDigits.map((digit, index) => {
+                    const isFilled = digit !== '' && digit !== ' ';
+                    const isFocused = focusedIndex === index && !isVerifying && !verifySuccess;
+                    const isCurrentPosition = index === otpValue.length && !isVerifying && !verifySuccess;
+
+                    return (
+                      <button
+                        key={index}
+                        type="button"
+                        className={`landing-otp-digit ${isFilled ? 'filled' : ''} ${isFocused || isCurrentPosition ? 'focused' : ''} ${isVerifying ? 'verifying' : ''} ${verifySuccess ? 'success' : ''}`}
+                        onClick={(e) => { e.stopPropagation(); handleDigitClick(index); }}
+                        tabIndex={-1}
+                        aria-hidden="true"
+                      >
+                        {isFilled ? (
+                          <span className="landing-otp-digit-value">{digit}</span>
+                        ) : isCurrentPosition && !isVerifying ? (
+                          <span className="landing-otp-cursor" />
+                        ) : null}
+                        {verifySuccess && index === OTP_LENGTH - 1 && (
+                          <span className="landing-otp-check">
+                            <CheckCircle2 size={20} />
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
 
-                {/* Verifying indicator */}
-                {isVerifying && (
-                  <div className="landing-verifying">
-                    <Loader2 size={16} className="spinner" />
-                    <span>Verifying...</span>
-                  </div>
-                )}
+                {/* Status indicator */}
+                <div className="landing-otp-status">
+                  {isVerifying ? (
+                    <div className="landing-verifying">
+                      <Loader2 size={16} className="spinner" />
+                      <span>Verifying...</span>
+                    </div>
+                  ) : verifySuccess ? (
+                    <div className="landing-success">
+                      <CheckCircle2 size={16} />
+                      <span>Success! Signing you in...</span>
+                    </div>
+                  ) : null}
+                </div>
 
-                <button
-                  type="button"
-                  className="landing-resend-btn"
-                  onClick={handleResendCode}
-                  disabled={resendCountdown > 0 || isResending}
-                  aria-label={resendCountdown > 0 ? `Resend code in ${resendCountdown} seconds` : 'Resend code'}
-                >
-                  {isResending ? (
-                    <Loader2 size={16} className="spinner" />
-                  ) : (
-                    <RefreshCw size={16} />
-                  )}
-                  <span>
-                    {resendCountdown > 0 ? `Resend in ${resendCountdown}s` : 'Resend Code'}
-                  </span>
-                </button>
+                {!verifySuccess && (
+                  <button
+                    type="button"
+                    className="landing-resend-btn"
+                    onClick={handleResendCode}
+                    disabled={resendCountdown > 0 || isResending}
+                    aria-label={resendCountdown > 0 ? `Resend code in ${resendCountdown} seconds` : 'Resend code'}
+                  >
+                    {isResending ? (
+                      <Loader2 size={16} className="spinner" />
+                    ) : (
+                      <RefreshCw size={16} />
+                    )}
+                    <span>
+                      {resendCountdown > 0 ? `Resend in ${resendCountdown}s` : 'Resend Code'}
+                    </span>
+                  </button>
+                )}
               </div>
             ) : (
               <form onSubmit={handlePhoneSubmit} className="landing-phone-form">
