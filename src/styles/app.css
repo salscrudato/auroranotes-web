@@ -8448,9 +8448,29 @@ mark.highlight {
 }
 
 .landing-auth-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.6;
   cursor: not-allowed;
   transform: none !important;
+}
+
+/* Button loading state with spinner */
+.landing-auth-btn .spinner {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Subtle pulse for loading button */
+.landing-auth-btn:disabled:has(.spinner) {
+  animation: buttonLoadingPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes buttonLoadingPulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 0.55; }
 }
 
 /* Divider - Elegant fade */
@@ -8484,17 +8504,39 @@ mark.highlight {
   flex-direction: column;
   gap: var(--space-4);
   width: 100%;
-  animation: formSlideIn 0.4s ease-out;
+  animation: formSlideIn 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @keyframes formSlideIn {
   from {
     opacity: 0;
-    transform: translateX(20px);
+    transform: translateX(16px) scale(0.98);
   }
   to {
     opacity: 1;
-    transform: translateX(0);
+    transform: translateX(0) scale(1);
+  }
+}
+
+/* Smooth transition for form elements */
+.landing-phone-form > * {
+  animation: formElementFadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+}
+
+.landing-phone-form > *:nth-child(1) { animation-delay: 0.05s; }
+.landing-phone-form > *:nth-child(2) { animation-delay: 0.1s; }
+.landing-phone-form > *:nth-child(3) { animation-delay: 0.15s; }
+.landing-phone-form > *:nth-child(4) { animation-delay: 0.2s; }
+.landing-phone-form > *:nth-child(5) { animation-delay: 0.25s; }
+
+@keyframes formElementFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -9120,6 +9162,221 @@ mark.highlight {
 .landing-resend-btn:focus-visible {
   outline: none;
   box-shadow: var(--shadow-focus-ring);
+}
+
+/* ============================================
+   Phone Input Component - International Support
+   ============================================ */
+
+.phone-input-wrapper {
+  width: 100%;
+}
+
+.phone-input-container {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  transition: all 0.2s ease;
+  overflow: hidden;
+}
+
+.phone-input-container:hover:not(.has-error) {
+  border-color: var(--color-border-strong);
+}
+
+.phone-input-container:focus-within:not(.has-error) {
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-focus);
+}
+
+.phone-input-container.has-error {
+  border-color: var(--color-danger);
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.1);
+}
+
+.phone-input-container.is-valid:not(.has-error) {
+  border-color: var(--color-success);
+}
+
+/* Country Selector */
+.phone-input-country {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.phone-input-country-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-3);
+  background: var(--color-surface-elevated);
+  border: none;
+  border-right: 1px solid var(--color-border);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  transition: background 0.2s ease;
+}
+
+.phone-input-country-btn:hover {
+  background: var(--color-surface-hover);
+}
+
+.phone-input-country-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.phone-input-flag {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.phone-input-dial {
+  font-weight: var(--font-medium);
+  color: var(--color-text-secondary);
+}
+
+.phone-input-chevron {
+  color: var(--color-text-tertiary);
+  transition: transform 0.2s ease;
+}
+
+.phone-input-chevron.open {
+  transform: rotate(180deg);
+}
+
+/* Country Dropdown */
+.phone-input-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 280px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: 100;
+  animation: dropdownSlideIn 0.2s ease-out;
+}
+
+@keyframes dropdownSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.phone-input-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  transition: background 0.15s ease;
+}
+
+.phone-input-dropdown-item:hover {
+  background: var(--color-surface-hover);
+}
+
+.phone-input-dropdown-item.selected {
+  background: var(--color-accent-subtle);
+}
+
+.phone-input-country-name {
+  flex: 1;
+  font-weight: var(--font-medium);
+}
+
+.phone-input-check {
+  color: var(--color-accent);
+}
+
+/* Phone Number Field */
+.phone-input-field {
+  flex: 1;
+  padding: var(--space-4);
+  font-size: 18px;
+  font-family: inherit;
+  font-weight: var(--font-medium);
+  letter-spacing: 0.02em;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  outline: none;
+}
+
+.phone-input-field::placeholder {
+  color: var(--color-placeholder);
+  font-weight: var(--font-normal);
+}
+
+/* Validation Status */
+.phone-input-status {
+  display: flex;
+  align-items: center;
+  padding-right: var(--space-3);
+}
+
+.phone-input-valid {
+  color: var(--color-success);
+  animation: checkIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.phone-input-invalid {
+  color: var(--color-text-tertiary);
+}
+
+@keyframes checkIn {
+  0% { transform: scale(0); opacity: 0; }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.phone-input-error {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  color: var(--color-danger);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* Mobile Optimizations */
+@media (max-width: 480px) {
+  .phone-input-field {
+    font-size: 16px; /* Prevent iOS zoom */
+    padding: var(--space-3);
+  }
+
+  .phone-input-country-btn {
+    padding: var(--space-3) var(--space-2);
+  }
+
+  .phone-input-dial {
+    display: none;
+  }
+
+  .phone-input-dropdown {
+    min-width: 260px;
+  }
 }
 
 /* Security Highlights */

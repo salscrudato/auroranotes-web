@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef, memo } from 'react';
 import { Loader2, Phone, ChevronLeft, PenLine, MessageCircle, Sparkles, Shield, Lock, RefreshCw, CheckCircle2, ArrowRight } from 'lucide-react';
 import { useAuth } from '@/auth/useAuth';
 import { GoogleIcon } from './GoogleIcon';
-import { formatPhoneNumber, toE164 } from '@/lib/utils';
+import { PhoneInput } from './PhoneInput';
 import { clearRecaptcha, initRecaptcha } from '@/lib/firebase';
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -29,7 +29,9 @@ export const LandingPage = memo(function LandingPage() {
   const { signInWithGoogle, startPhoneSignIn, verifyPhoneCode, phoneVerificationPending, error, clearError } = useAuth();
   const [loading, setLoading] = useState(false);
   const [showPhoneInput, setShowPhoneInput] = useState(false);
-  const [phoneNumber, setPhoneNumber] = useState('');
+  const [phoneE164, setPhoneE164] = useState('');
+  const [phoneFormatted, setPhoneFormatted] = useState('');
+  const [phoneIsValid, setPhoneIsValid] = useState(false);
   const [otpValue, setOtpValue] = useState('');
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [resendCountdown, setResendCountdown] = useState(0);
@@ -135,15 +137,19 @@ export const LandingPage = memo(function LandingPage() {
 
   const handleGoogleSignIn = useCallback(() => withLoading(signInWithGoogle), [withLoading, signInWithGoogle]);
 
-  const handlePhoneChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setPhoneNumber(formatPhoneNumber(e.target.value).formatted);
-  }, []);
+  // Handle phone input changes from the PhoneInput component
+  const handlePhoneChange = useCallback((e164: string, formatted: string, isValid: boolean) => {
+    setPhoneE164(e164);
+    setPhoneFormatted(formatted);
+    setPhoneIsValid(isValid);
+    if (error) clearError();
+  }, [error, clearError]);
 
   const handlePhoneSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
-    if (!phoneNumber.trim()) return;
-    withLoading(() => startPhoneSignIn(toE164(phoneNumber)));
-  }, [phoneNumber, startPhoneSignIn, withLoading]);
+    if (!phoneIsValid || !phoneE164) return;
+    withLoading(() => startPhoneSignIn(phoneE164));
+  }, [phoneE164, phoneIsValid, startPhoneSignIn, withLoading]);
 
   const handleVerifyCode = useCallback(async () => {
     if (otpValue.length !== OTP_LENGTH || isVerifying) return;
@@ -170,11 +176,30 @@ export const LandingPage = memo(function LandingPage() {
     setFocusedIndex(Math.min(value.length, OTP_LENGTH - 1));
   }, []);
 
+  // Handle paste event to extract OTP from clipboard
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const pastedText = e.clipboardData.getData('text');
+    // Extract only digits from pasted content
+    const digits = pastedText.replace(/\D/g, '').slice(0, OTP_LENGTH);
+    if (digits.length > 0) {
+      setOtpValue(digits);
+      setFocusedIndex(Math.min(digits.length, OTP_LENGTH - 1));
+    }
+  }, []);
+
   // Handle key events on hidden input
   const handleHiddenInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Backspace' && otpValue.length > 0) {
-      setOtpValue(prev => prev.slice(0, -1));
-      setFocusedIndex(Math.max(0, otpValue.length - 1));
+    if (e.key === 'Backspace') {
+      e.preventDefault();
+      if (otpValue.length > 0) {
+        setOtpValue(prev => prev.slice(0, -1));
+        setFocusedIndex(Math.max(0, otpValue.length - 2));
+      }
+    } else if (e.key === 'ArrowLeft') {
+      setFocusedIndex(prev => Math.max(0, prev - 1));
+    } else if (e.key === 'ArrowRight') {
+      setFocusedIndex(prev => Math.min(OTP_LENGTH - 1, prev + 1));
     }
   }, [otpValue]);
 
@@ -185,13 +210,13 @@ export const LandingPage = memo(function LandingPage() {
   }, []);
 
   const handleResendCode = useCallback(async () => {
-    if (resendCountdown > 0 || isResending) return;
+    if (resendCountdown > 0 || isResending || !phoneE164) return;
     setIsResending(true);
     clearError();
     setOtpValue('');
     setFocusedIndex(0);
     try {
-      await startPhoneSignIn(toE164(phoneNumber));
+      await startPhoneSignIn(phoneE164);
       setResendCountdown(RESEND_COOLDOWN_SECONDS);
       countdownRef.current = setInterval(() => {
         setResendCountdown(prev => {
@@ -208,13 +233,15 @@ export const LandingPage = memo(function LandingPage() {
     } finally {
       setIsResending(false);
     }
-  }, [resendCountdown, isResending, phoneNumber, startPhoneSignIn, clearError]);
+  }, [resendCountdown, isResending, phoneE164, startPhoneSignIn, clearError]);
 
   const handleBackToOptions = useCallback(() => {
     if (countdownRef.current) clearInterval(countdownRef.current);
     if (webOtpAbortRef.current) webOtpAbortRef.current.abort();
     setShowPhoneInput(false);
-    setPhoneNumber('');
+    setPhoneE164('');
+    setPhoneFormatted('');
+    setPhoneIsValid(false);
     setOtpValue('');
     setFocusedIndex(0);
     setResendCountdown(0);
@@ -270,7 +297,7 @@ export const LandingPage = memo(function LandingPage() {
               <div className="landing-phone-form">
                 {BackButton}
                 <p className="landing-phone-hint">
-                  {verifySuccess ? 'Code verified!' : `Enter the 6-digit code sent to ${phoneNumber}`}
+                  {verifySuccess ? 'Code verified!' : `Enter the 6-digit code sent to ${phoneFormatted || phoneE164}`}
                 </p>
 
                 {/* Hidden input for SMS autofill - this is the key for proper autofill! */}
@@ -283,6 +310,7 @@ export const LandingPage = memo(function LandingPage() {
                   value={otpValue}
                   onChange={handleHiddenInputChange}
                   onKeyDown={handleHiddenInputKeyDown}
+                  onPaste={handlePaste}
                   maxLength={OTP_LENGTH}
                   disabled={isVerifying || verifySuccess}
                   aria-label="Enter verification code"
@@ -364,24 +392,30 @@ export const LandingPage = memo(function LandingPage() {
               <form onSubmit={handlePhoneSubmit} className="landing-phone-form">
                 {BackButton}
                 <p className="landing-phone-hint">Enter your phone number</p>
-                <input
-                  type="tel"
-                  inputMode="tel"
-                  autoComplete="tel"
-                  className="landing-phone-input"
-                  placeholder="(555) 123-4567"
-                  value={phoneNumber}
+                <PhoneInput
+                  value={phoneFormatted}
                   onChange={handlePhoneChange}
+                  disabled={loading}
                   autoFocus
+                  error={error?.code?.includes('phone') ? error.message : null}
                 />
                 <button
                   id="phone-sign-in-button"
                   type="submit"
                   className="landing-auth-btn landing-auth-primary"
-                  disabled={loading || phoneNumber.replace(/\D/g, '').length < 10}
+                  disabled={loading || !phoneIsValid}
                 >
-                  {loading ? <Loader2 size={20} className="spinner" /> : <ArrowRight size={20} />}
-                  <span>Send Code</span>
+                  {loading ? (
+                    <>
+                      <Loader2 size={20} className="spinner" />
+                      <span>Sending...</span>
+                    </>
+                  ) : (
+                    <>
+                      <ArrowRight size={20} />
+                      <span>Send Verification Code</span>
+                    </>
+                  )}
                 </button>
               </form>
             )}
